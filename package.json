@@ -12,6 +12,8 @@
     "postinstall": "patch-package",
     "build": "vinext build",
     "start": "wrangler dev --config dist/server/wrangler.json",
+    "lan": "node scripts/lan.mjs",
+    "processor": "node scripts/background.mjs",
     "lint": "oxlint",
     "format": "oxfmt",
     "typecheck": "tsc --noEmit",

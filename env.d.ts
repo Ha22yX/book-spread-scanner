@@ -3,5 +3,6 @@ declare namespace Cloudflare {
     FILES: R2Bucket;
     OPENAI_API_KEY?: string;
     OPENAI_MODEL?: string;
+    PROCESSOR_TOKEN?: string;
   }
 }

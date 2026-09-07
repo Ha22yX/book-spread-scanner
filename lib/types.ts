@@ -1,6 +1,6 @@
 export type Side = 'left' | 'right';
 export type Box = { x0: number; y0: number; x1: number; y1: number };
-export type Polygon = {x:number;y:number}[];
+export type Polygon = { x: number; y: number }[];
 export type Seam = {
   top: number;
   bottom: number;
@@ -21,7 +21,13 @@ export type Annotation = {
   id: string;
   comment: string;
   type: string;
-  anchors: { span_id: string; quote: string; side: Side; boxes: Box[]; polygon?: Polygon }[];
+  anchors: {
+    span_id: string;
+    quote: string;
+    side: Side;
+    boxes: Box[];
+    polygon?: Polygon;
+  }[];
 };
 export type Spread = {
   id: string;
@@ -33,7 +39,28 @@ export type Spread = {
   height: number;
   left: Dimensions;
   right: Dimensions;
-  status: 'ready' | 'annotating' | 'annotated' | 'failed';
+  status:
+    | 'ready'
+    | 'queued'
+    | 'processing'
+    | 'annotating'
+    | 'annotated'
+    | 'failed';
+  pipeline?: {
+    stage:
+      | 'queued'
+      | 'splitting'
+      | 'ocr_left'
+      | 'ocr_right'
+      | 'context'
+      | 'annotating'
+      | 'complete'
+      | 'failed';
+    percent: number;
+    updatedAt: number;
+    splitReady: boolean;
+    attempts: number;
+  };
   error?: string;
   spans?: TextSpan[];
   annotations?: Annotation[];

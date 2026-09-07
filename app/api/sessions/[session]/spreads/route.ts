@@ -51,6 +51,9 @@ export async function POST(
       .first<{ data: string }>();
     if (existing) return json(JSON.parse(existing.data));
     const image = decodePhoto(buffer.buffer);
+    const automatic = !!env.PROCESSOR_TOKEN;
+    if(request.headers.get('x-auto-process')==='true' && !automatic)
+      throw new ApiError(503,'自动处理后台尚未配置，请在电脑端启动局域网服务。');
     let seam = detectSeam(image);
     const next = await db()
       .prepare(
@@ -60,7 +63,7 @@ export async function POST(
       .first<{ next_sequence: number }>();
     if (!next)
       throw new ApiError(400, '每个会话最多支持 100 次拍摄，请创建新会话。');
-    if (seam.confidence < 0.4 && env.OPENAI_API_KEY) {
+    if (!automatic && seam.confidence < 0.4 && env.OPENAI_API_KEY) {
       seam =
         (await detectVisionSeam(
           image,
@@ -72,7 +75,7 @@ export async function POST(
     await files().put(`${session}/${id}/original.jpg`, buffer, {
       httpMetadata: { contentType: 'image/jpeg' },
     });
-    const dims = await saveSplit(prefix, image, seam);
+    const dims = automatic ? {left:{width:Math.floor(image.width/2),height:image.height},right:{width:Math.ceil(image.width/2),height:image.height}} : await saveSplit(prefix, image, seam);
     const spread: Spread = {
       id,
       sequence: next.next_sequence,
@@ -82,7 +85,8 @@ export async function POST(
       width: image.width,
       height: image.height,
       ...dims,
-      status: 'ready',
+      status: automatic ? 'queued' : 'ready',
+      ...(automatic ? {pipeline:{stage:'queued' as const,percent:5,updatedAt:Date.now(),splitReady:false,attempts:0}} : {}),
     };
     await db()
       .prepare(
@@ -93,7 +97,7 @@ export async function POST(
         session,
         spread.sequence,
         spread.created_at,
-        'ready',
+        spread.status,
         JSON.stringify(spread),
       )
       .run();

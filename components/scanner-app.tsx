@@ -4,8 +4,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { MarginalBook } from './marginal-book';
+import { PipelineProgress } from './pipeline-progress';
+import { isProcessing } from '@/lib/pipeline';
 import { buildSentences } from '@/lib/sentences';
-import { OCR_ENGINE } from '@/lib/paddle-lines';
 import { createUploadId } from '@/lib/upload-id';
 import {
   BookOpen,
@@ -35,11 +36,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Slider } from '@/components/ui/slider';
 import { api, preparePhoto, imageUrl } from '@/lib/client';
 import type { ScanSession, Spread, Seam } from '@/lib/types';
-import {
-  previousSpreads,
-  englishWordCount,
-  type ReadingContext,
-} from '@/lib/reading-context';
+import { englishWordCount } from '@/lib/reading-context';
 
 export function ScannerApp({
   mode,
@@ -159,7 +156,7 @@ export function ScannerApp({
       } catch (e) {
         if (alive) setError((e as Error).message);
       } finally {
-        if (alive) timer = setTimeout(poll, 3000);
+        if (alive) timer = setTimeout(poll, 1500);
       }
     };
     void poll();
@@ -248,7 +245,7 @@ export function ScannerApp({
       });
       updateSpread(result);
       setCapture(null);
-      setTab('split');
+      setTab(result.pipeline ? 'pages' : 'split');
       setActiveNote('');
     });
   const saveSeam = (seam: Seam) =>
@@ -271,37 +268,15 @@ export function ScannerApp({
       setTab('pages');
     });
   const generate = () =>
-    void perform('准备识别文字', async () => {
+    void perform('提交后台处理', async () => {
       if (!spread) return;
-      const { recognizeBook: recognizeSpread } =
-        await import('@/lib/paddle-ocr');
-      const history: ReadingContext[] = [];
-      for (const prior of previousSpreads(session?.spreads ?? [], spread)) {
-        const previous =
-          prior.ocrEngine === OCR_ENGINE && prior.spans?.length
-            ? prior.spans
-            : await recognizeSpread(sessionId, prior, (text) =>
-                setBusy(`读取前文 · 第 ${prior.sequence} 次拍摄 · ${text}`),
-              );
-        history.push({
-          spreadId: prior.id,
-          revision: prior.revision,
-          sequence: prior.sequence,
-          lines: previous.map((s) => ({ side: s.side, text: s.text })),
-        });
-      }
-      const spans = await recognizeSpread(sessionId, spread, setBusy);
-      setBusy(`GPT-5.6 正在联读前 ${history.length} 张照片与当前左右页`);
       const updated = await api<Spread>(
-        `/api/sessions/${sessionId}/spreads/${spread.id}/annotate`,
+        `/api/sessions/${sessionId}/spreads/${spread.id}/process`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             revision: spread.revision,
-            spans,
-            history,
-            ocrEngine: OCR_ENGINE,
           }),
         },
       );
@@ -620,7 +595,11 @@ export function ScannerApp({
                     <span>
                       第 {s.sequence} 次拍摄
                       <small>
-                        左 {s.sequence * 2 - 1} → 右 {s.sequence * 2}
+                        {isProcessing(s)
+                          ? `处理中 ${s.pipeline?.percent ?? 0}%`
+                          : s.status === 'failed'
+                            ? '处理失败 · 可重试'
+                            : `左 ${s.sequence * 2 - 1} → 右 ${s.sequence * 2}`}
                       </small>
                     </span>
                     {s.status === 'annotated' && <Check size={15} />}
@@ -640,6 +619,7 @@ export function ScannerApp({
               </div>
               {spread && (
                 <section className="review-section">
+                  <PipelineProgress spread={spread} />
                   <Tabs
                     value={tab}
                     onValueChange={(value) => setTab(String(value))}
@@ -647,7 +627,14 @@ export function ScannerApp({
                     <div className="review-toolbar">
                       <TabsList className="view-tabs">
                         <TabsTrigger value="pages">左右页预览</TabsTrigger>
-                        <TabsTrigger value="split">原图与分割</TabsTrigger>
+                        <TabsTrigger
+                          value="split"
+                          disabled={
+                            !!spread.pipeline && !spread.pipeline.splitReady
+                          }
+                        >
+                          原图与分割
+                        </TabsTrigger>
                         <TabsTrigger value="text">识别文字</TabsTrigger>
                       </TabsList>
                       <span className="page-order">
@@ -660,7 +647,7 @@ export function ScannerApp({
                         key={`${spread.id}-${spread.revision}`}
                         session={sessionId}
                         spread={spread}
-                        disabled={busyNow}
+                        disabled={busyNow || isProcessing(spread)}
                         onSave={saveSeam}
                       />
                     </TabsContent>
@@ -676,13 +663,17 @@ export function ScannerApp({
                         {!isPhone && (
                           <Button
                             className="action"
-                            disabled={busyNow || spread.status === 'annotating'}
+                            disabled={busyNow || isProcessing(spread)}
                             onClick={generate}
                           >
                             <Sparkles />
-                            {spread.annotations?.length
-                              ? '重新识别并生成批注'
-                              : '识别文字并生成批注'}
+                            {isProcessing(spread)
+                              ? '后台自动处理中'
+                              : spread.status === 'failed'
+                                ? '重试自动处理'
+                                : spread.annotations?.length
+                                  ? '重新识别并生成批注'
+                                  : '识别文字并生成批注'}
                           </Button>
                         )}
                       </div>
@@ -700,12 +691,22 @@ export function ScannerApp({
                           文字不够清晰，请在“识别文字”中核对。完整句子由各行拼接，原图坐标保持不变。
                         </p>
                       )}
-                      <MarginalBook
-                        session={sessionId}
-                        spread={spread}
-                        activeNote={activeNote}
-                        onNote={setActiveNote}
-                      />
+                      {spread.pipeline && !spread.pipeline.splitReady ? (
+                        <div className="processing-photo">
+                          <img
+                            src={imageUrl(sessionId, spread, 'original')}
+                            alt="已上传的原始照片，等待自动分割"
+                          />
+                          <p>原图已保存，正在后台自动分割。</p>
+                        </div>
+                      ) : (
+                        <MarginalBook
+                          session={sessionId}
+                          spread={spread}
+                          activeNote={activeNote}
+                          onNote={setActiveNote}
+                        />
+                      )}
                       <p className="model-label">
                         {spread.model || 'GPT-5.6 Sol'} · 图片与原文联合理解 ·
                         已参考前 {spread.contextSources?.length ?? 0} 张照片 ·{' '}
@@ -720,9 +721,11 @@ export function ScannerApp({
                         <p className="muted">
                           {spread.status === 'annotated'
                             ? '这张照片没有识别到值得特别标记的内容，不强行凑批注。'
-                            : isPhone
-                              ? '照片已同步。请在电脑端生成批注。'
-                              : '确认左右分割后生成批注，笔记会出现在句子旁边。'}
+                            : isProcessing(spread)
+                              ? '后台会自动完成全部步骤，无需点击。'
+                              : isPhone
+                                ? '照片已同步。请在电脑端生成批注。'
+                                : '确认左右分割后生成批注，笔记会出现在句子旁边。'}
                         </p>
                       )}
                     </TabsContent>
@@ -758,7 +761,8 @@ export function ScannerApp({
         {sessionId && (
           <footer className="workspace-footer">
             <span className="row">
-              <span className="live-dot" />每 3 秒同步手机与电脑的扫描结果
+              <span className="live-dot" />
+              自动同步手机照片与后台处理进度
             </span>
             {isPhone ? (
               <a href={`/review/${sessionId}`}>
@@ -792,7 +796,9 @@ export function ScannerApp({
             variant="outline"
             onClick={() => {
               if (!navigator.clipboard) {
-                setError('当前 HTTP 页面不支持自动复制，请长按下方拍摄链接复制，或直接扫描二维码。');
+                setError(
+                  '当前 HTTP 页面不支持自动复制，请长按下方拍摄链接复制，或直接扫描二维码。',
+                );
                 return;
               }
               navigator.clipboard

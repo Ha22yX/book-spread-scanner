@@ -1,9 +1,9 @@
-import { ScannerApp } from '@/components/scanner-app';
+import { PhoneCapture } from '@/components/phone-capture';
 export default async function Scan({
   params,
 }: {
   params: Promise<{ session: string }>;
 }) {
   const { session } = await params;
-  return <ScannerApp mode="scan" initialSession={session} />;
+  return <PhoneCapture session={session} />;
 }

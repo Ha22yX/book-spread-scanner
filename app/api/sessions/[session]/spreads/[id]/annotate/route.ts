@@ -16,6 +16,7 @@ import { ANNOTATION_PROMPT_VERSION } from '@/lib/prompts';
 import type { Spread } from '@/lib/types';
 import type { ReadingContext } from '@/lib/reading-context';
 import { OCR_ENGINE } from '@/lib/paddle-lines';
+import { isProcessing } from '@/lib/pipeline';
 const schema = z.object({
   revision: z.number().int().positive(),
   spans: spansSchema,
@@ -50,6 +51,7 @@ export async function POST(
       throw new ApiError(503, '尚未配置服务端 OpenAI API Key。');
     const { session, id } = await params,
       { value } = await getSpread(session, id);
+    if(isProcessing(value)) throw new ApiError(409,'书页正在后台处理中，请稍候。');
     const input = schema.safeParse(await readJson(request, 1_500_000));
     if (!input.success)
       throw new ApiError(400, '文字识别结果无效，请重新识别。');

@@ -1,4 +1,7 @@
 import { z } from 'zod';
+import { env } from 'cloudflare:workers';
+import { isProcessing,queueSpread } from '@/lib/pipeline';
+import type { Spread } from '@/lib/types';
 import {
   checkOrigin,
   getSpread,
@@ -26,6 +29,7 @@ export async function POST(
     const input = schema.safeParse(await readJson(request, 1000));
     if (!input.success) throw new ApiError(400, '分割位置无效。');
     const { value } = await getSpread(session, id);
+    if(isProcessing(value)) throw new ApiError(409,'书页正在自动处理中，请完成后再调整。');
     if (input.data.revision !== value.revision)
       throw new ApiError(409, '另一台设备已修改书页，请刷新。');
     const locked = await db()
@@ -43,7 +47,7 @@ export async function POST(
     const seam = { ...input.data, confidence: 1, method: 'manual' as const };
     const revision = value.revision + 1;
     const dims = await saveSplit(`${session}/${id}/${revision}`, image, seam);
-    const updated = {
+    let updated:Spread = {
       ...value,
       ...dims,
       seam,
@@ -52,14 +56,16 @@ export async function POST(
       spans: [],
       annotations: [],
       error: undefined,
+      pipeline: undefined,
     };
+    if(env.PROCESSOR_TOKEN) updated=queueSpread(updated);
     await db()
       .prepare(
         'UPDATE spreads SET revision=?,status=?,job_started=NULL,data=? WHERE id=? AND session_id=? AND revision=?',
       )
       .bind(
         revision,
-        'ready',
+        updated.status,
         JSON.stringify(updated),
         id,
         session,
