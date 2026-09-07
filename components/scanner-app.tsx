@@ -27,7 +27,12 @@ import {
   Monitor,
   ScanLine,
   Trash2,
+  MoreHorizontal,
+  FileText,
+  Info,
+  ArrowLeft,
 } from 'lucide-react';
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem } from '@/components/ui/context-menu';
 import { AlertDialog, AlertDialogContent, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
@@ -37,7 +42,6 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Slider } from '@/components/ui/slider';
 import { api, preparePhoto, imageUrl } from '@/lib/client';
 import type { ScanSession, Spread, Seam } from '@/lib/types';
@@ -59,6 +63,7 @@ export function ScannerApp({
     [qr, setQr] = useState(''),
     [copied, setCopied] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Spread | null>(null);
+  const [infoOpen, setInfoOpen] = useState(false);
   const removedIds = useRef(new Set<string>());
   const detailCache = useRef(new DetailCache(3));
   const [detail, setDetail] = useState<{key:string; value:Spread} | null>(null);
@@ -409,16 +414,16 @@ export function ScannerApp({
   }, [selectableSpreadIds]);
   const busyNow = !!busy;
   return (
-    <main className={`shell ${isPhone ? 'phone-shell' : ''}`}>
+    <main className={`shell ${isPhone ? 'phone-shell' : 'reader-shell'}`}>
       <header className="topbar">
         <Link className="brand" href="/">
           <BookOpen />
           <span>
-            书页<span className="brand-sub">双页扫描与批注</span>
+            书页
           </span>
         </Link>
         <div className="row">
-          <span className="mode-indicator">
+          {isPhone && <span className="mode-indicator">
             {isPhone ? (
               <>
                 <Smartphone size={15} />
@@ -430,10 +435,10 @@ export function ScannerApp({
                 阅读工作台
               </>
             )}
-          </span>
-          {sessionId && !isPhone && (
+          </span>}
+          {!isPhone && (
             <Button
-              variant="ghost"
+              variant="outline"
               className="action"
               onClick={pair}
               disabled={busyNow}
@@ -442,10 +447,27 @@ export function ScannerApp({
               连接手机
             </Button>
           )}
+          {!isPhone && <DropdownMenu>
+            <DropdownMenuTrigger render={<Button variant="ghost" className="reader-more" aria-label="更多操作" />}><MoreHorizontal size={20} /></DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="reader-menu">
+              <DropdownMenuItem disabled={busyNow} onClick={() => fileInput.current?.click()}><Upload /> 导入照片</DropdownMenuItem>
+              <DropdownMenuItem disabled={busyNow || !!capture} onClick={() => { setError(''); setCamera(true); }}><Camera /> 使用电脑相机</DropdownMenuItem>
+              {spread && <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem disabled={busyNow} onClick={() => setTab('pages')}><BookOpen /> 查看批注</DropdownMenuItem>
+                <DropdownMenuItem disabled={busyNow || detailLoading} onClick={() => setTab('text')}><FileText /> 查看识别原文</DropdownMenuItem>
+                <DropdownMenuItem disabled={busyNow || (!!spread.pipeline && !spread.pipeline.splitReady)} onClick={() => setTab('split')}><Scissors /> 调整左右分割</DropdownMenuItem>
+                <DropdownMenuItem disabled={busyNow || isProcessing(spread) || detailLoading} onClick={generate}><Sparkles /> 重新识别与批注</DropdownMenuItem>
+                <DropdownMenuItem disabled={detailLoading} onClick={() => setInfoOpen(true)}><Info /> 处理信息</DropdownMenuItem>
+              </>}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem render={<Link href="/" />}><Plus /> 新建会话</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>}
         </div>
       </header>
       <section className="workspace">
-        <div className="heading">
+        {isPhone && <div className="heading">
           <div>
             <p className="eyebrow">
               {isPhone ? 'CAPTURE / 01' : 'YOUR READING DESK'}
@@ -490,7 +512,7 @@ export function ScannerApp({
               选择照片
             </Button>
           </div>
-        </div>
+        </div>}
         <input
           ref={fileInput}
           type="file"
@@ -590,7 +612,7 @@ export function ScannerApp({
         {!capture &&
           !camera &&
           (!session?.spreads.length ? (
-            <div className="start-grid">
+            <div className={isPhone ? 'start-grid' : 'reader-start'}>
               <div className="empty-surface">
                 <div className="empty-icon">
                   <ScanLine size={38} />
@@ -598,10 +620,10 @@ export function ScannerApp({
                 <h2>
                   {isPhone
                     ? '准备好书本，就可以开始了'
-                    : '你的书页将在这里展开'}
+                    : '从手机拍下书页'}
                 </h2>
                 <p>
-                  让书本尽量铺平，书脊竖直，避免手指遮住文字。拍摄后可以微调分割线。
+                  拍摄后自动处理，批注会显示在这里。
                 </p>
                 <Button
                   className="action"
@@ -609,11 +631,11 @@ export function ScannerApp({
                   onClick={isPhone ? () => setCamera(true) : pair}
                 >
                   {isPhone ? <Camera /> : <Smartphone />}
-                  {isPhone ? '打开相机' : '连接手机开始拍摄'}
+                  {isPhone ? '打开相机' : '连接手机'}
                   <ArrowRight size={16} />
                 </Button>
               </div>
-              <aside className="start-aside">
+              {isPhone && <aside className="start-aside">
                 <span className="eyebrow">一次拍摄，两页阅读</span>
                 <ol className="steps">
                   <li>
@@ -644,7 +666,7 @@ export function ScannerApp({
                     支持中英文横排印刷书籍。保留页面边缘，暂不展平书脊曲面。
                   </p>
                 </div>
-              </aside>
+              </aside>}
             </div>
           ) : (
             <>
@@ -659,14 +681,14 @@ export function ScannerApp({
                   >
                     <LazyThumbnail session={sessionId} id={s.id} />
                     <span>
-                      第 {s.sequence} 次拍摄
-                      <small>
+                      拍摄 {s.sequence}
+                      {(isProcessing(s) || s.status === 'failed') && <small>
                         {isProcessing(s)
                           ? `处理中 ${s.pipeline?.percent ?? 0}%`
                           : s.status === 'failed'
                             ? '处理失败 · 可重试'
                             : `左 ${s.sequence * 2 - 1} → 右 ${s.sequence * 2}`}
-                      </small>
+                      </small>}
                     </span>
                     {s.status === 'annotated' && <Check size={15} />}
                   </ContextMenuTrigger>
@@ -677,7 +699,7 @@ export function ScannerApp({
                   </ContextMenuContent>
                   </ContextMenu>
                 ))}
-                <Button
+                {isPhone && <Button
                   variant="ghost"
                   className="add-spread"
                   disabled={busyNow}
@@ -687,37 +709,24 @@ export function ScannerApp({
                 >
                   <Plus />
                   继续扫描
-                </Button>
+                </Button>}
               </div>
               {spread && (
                 <section className="review-section">
                   <PipelineProgress spread={spread} />
+                  {spread.status === 'failed' && <div className="reader-failure" role="alert">
+                    <span>{spread.error || '这张照片处理失败。'}</span>
+                    <Button variant="outline" disabled={busyNow || detailLoading} onClick={generate}>重试</Button>
+                  </div>}
                   {detailLoading && <div className="detail-loading" role="status">
                     {detailError ? <><span>{detailError}</span><Button variant="outline" onClick={() => setDetailRetry((n) => n + 1)}>重新加载</Button></> : <><Loader2 className="spin" size={16} /> 正在读取这张照片的批注…</>}
                   </div>}
-                  <Tabs
-                    value={tab}
-                    onValueChange={(value) => setTab(String(value))}
-                  >
-                    <div className="review-toolbar">
-                      <TabsList className="view-tabs">
-                        <TabsTrigger value="pages">左右页预览</TabsTrigger>
-                        <TabsTrigger
-                          value="split"
-                          disabled={
-                            !!spread.pipeline && !spread.pipeline.splitReady
-                          }
-                        >
-                          原图与分割
-                        </TabsTrigger>
-                        <TabsTrigger value="text">识别文字</TabsTrigger>
-                      </TabsList>
-                      <span className="page-order">
-                        第 {spread.sequence * 2 - 1} 页 <ArrowRight size={14} />{' '}
-                        第 {spread.sequence * 2} 页
-                      </span>
-                    </div>
-                    <TabsContent value="split">
+                  <div>
+                    {tab !== 'pages' && <div className="reader-view-header">
+                      <Button variant="ghost" onClick={() => setTab('pages')}><ArrowLeft size={16} /> 返回批注</Button>
+                      <span>{tab === 'split' ? '调整分割' : '识别原文'}</span>
+                    </div>}
+                    {tab === 'split' && <div>
                       <SeamEditor
                         key={`${spread.id}-${spread.revision}`}
                         session={sessionId}
@@ -725,54 +734,19 @@ export function ScannerApp({
                         disabled={busyNow || isProcessing(spread)}
                         onSave={saveSeam}
                       />
-                    </TabsContent>
-                    <TabsContent value="pages">
-                      <div className="reading-actions">
-                        <div>
-                          <span className="eyebrow">MARGIN NOTES</span>
-                          <p>
-                            每张通常 1 处 · 简单英文 10–15 词 ·
-                            只标记重要情节与写法
-                          </p>
-                        </div>
-                        {!isPhone && (
-                          <Button
-                            className="action"
-                            disabled={busyNow || isProcessing(spread) || detailLoading}
-                            onClick={generate}
-                          >
-                            <Sparkles />
-                            {isProcessing(spread)
-                              ? '后台自动处理中'
-                              : spread.status === 'failed'
-                                ? '重试自动处理'
-                                : spread.annotations?.length
-                                  ? '重新识别并生成批注'
-                                  : '识别文字并生成批注'}
-                          </Button>
-                        )}
-                      </div>
-                      {spread.error && (
-                        <p className="inline-error">{spread.error}</p>
-                      )}
-                      {spread.annotationWarning && (
-                        <p className="quality-note">
-                          {spread.annotationWarning}
-                        </p>
-                      )}
-                      {spread.spans?.some((s) => s.confidence < 60) && (
-                        <p className="quality-note">
-                          部分 OCR
-                          文字不够清晰，请在“识别文字”中核对。完整句子由各行拼接，原图坐标保持不变。
-                        </p>
-                      )}
+                    </div>}
+                    {tab === 'pages' && <div>
+                      {(spread.annotationWarning || spread.spans?.some((s) => s.confidence < 60)) && <details className="reader-quality">
+                        <summary>识别提示</summary>
+                        {spread.annotationWarning && <p>{spread.annotationWarning}</p>}
+                        {spread.spans?.some((s) => s.confidence < 60) && <p>部分文字不够清晰，可在“更多操作 → 查看识别原文”中核对。</p>}
+                      </details>}
                       {spread.pipeline && !spread.pipeline.splitReady ? (
                         <div className="processing-photo">
                           <img
                             src={imageUrl(sessionId, spread, 'original')}
                             alt="已上传的原始照片，等待自动分割"
                           />
-                          <p>原图已保存，正在后台自动分割。</p>
                         </div>
                       ) : (
                         <MarginalBook
@@ -782,17 +756,7 @@ export function ScannerApp({
                           onNote={setActiveNote}
                         />
                       )}
-                      <p className="model-label">
-                        {spread.model || 'GPT-5.6 Sol'} · 图片与原文联合理解 ·
-                        已参考前 {spread.contextSources?.length ?? 0} 张照片 ·{' '}
-                        {spread.annotations?.length ?? 0} 处批注 /{' '}
-                        {spread.annotations?.reduce(
-                          (n, a) => n + englishWordCount(a.comment),
-                          0,
-                        ) ?? 0}{' '}
-                        词
-                      </p>
-                      {!detailLoading && !spread.annotations?.length && (
+                      {!detailLoading && spread.status === 'annotated' && !spread.annotations?.length && (
                         <p className="muted">
                           {spread.status === 'annotated'
                             ? '这张照片没有识别到值得特别标记的内容，不强行凑批注。'
@@ -803,8 +767,8 @@ export function ScannerApp({
                                 : '确认左右分割后生成批注，笔记会出现在句子旁边。'}
                         </p>
                       )}
-                    </TabsContent>
-                    <TabsContent value="text">
+                    </div>}
+                    {tab === 'text' && <div>
                       <article className="transcript joined-transcript">
                         <h2>连续原文 · 先左页，再右页</h2>
                         <p className="muted">
@@ -827,13 +791,13 @@ export function ScannerApp({
                           <p className="muted">尚未识别文字。</p>
                         )}
                       </article>
-                    </TabsContent>
-                  </Tabs>
+                    </div>}
+                  </div>
                 </section>
               )}
             </>
           ))}
-        {sessionId && (
+        {sessionId && isPhone && (
           <footer className="workspace-footer">
             <span className="row">
               <span className="live-dot" />
@@ -853,6 +817,15 @@ export function ScannerApp({
           </footer>
         )}
       </section>
+      <Dialog open={infoOpen} onOpenChange={setInfoOpen}>
+        <DialogContent className="reader-info">
+          <DialogTitle>拍摄 {spread?.sequence} · 处理信息</DialogTitle>
+          <DialogDescription>当前照片的批注记录。</DialogDescription>
+          <p>模型：{spread?.model || 'GPT-5.6 Sol'}</p>
+          <p>已参考前 {spread?.contextSources?.length ?? 0} 张照片</p>
+          <p>{spread?.annotations?.length ?? 0} 处批注，共 {spread?.annotations?.reduce((n, a) => n + englishWordCount(a.comment), 0) ?? 0} 个英文词</p>
+        </DialogContent>
+      </Dialog>
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open && !busyRef.current) setDeleteTarget(null); }}>
         <AlertDialogContent>
           <AlertDialogTitle>删除第 {deleteTarget?.sequence} 次拍摄？</AlertDialogTitle>

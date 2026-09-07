@@ -4,7 +4,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Download } from 'lucide-react';
 import { imageUrl } from '@/lib/client';
-import { englishWordCount } from '@/lib/reading-context';
 import type { Spread } from '@/lib/types';
 type Placement = {
   id: string;
@@ -97,7 +96,7 @@ export function MarginalBook({
           {(['left', 'right'] as const).map((side) => (
             <article className="book-page" key={side}>
               <div className="page-caption">
-                <span>{side === 'left' ? 'LEFT / 左页' : 'RIGHT / 右页'}</span>
+                <span>{side === 'left' ? '左页' : '右页'}</span>
                 <a
                   href={imageUrl(session, spread, side)}
                   download
@@ -155,9 +154,6 @@ export function MarginalBook({
                   )}
                 </svg>
               </div>
-              <span className="folio">
-                {side === 'left' ? '先读左页' : '再读右页'}
-              </span>
             </article>
           ))}
         </div>
@@ -192,14 +188,11 @@ export function MarginalBook({
               onFocus={() => onNote(note.id)}
               aria-label={`批注 ${i + 1}：${note.comment}`}
             >
-              <span className="margin-note-number">
+              {spread.annotations!.length > 1 && <span className="margin-note-number">
                 {String(i + 1).padStart(2, '0')}
-              </span>
+              </span>}
               <span className="margin-note-text" lang="en">
                 {note.comment}
-              </span>
-              <span className="margin-word-count">
-                {englishWordCount(note.comment)} words · AI
               </span>
             </button>
           );
