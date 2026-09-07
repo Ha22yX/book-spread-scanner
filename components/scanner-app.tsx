@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { MarginalBook } from './marginal-book';
 import { buildSentences } from '@/lib/sentences';
 import { OCR_ENGINE } from '@/lib/paddle-lines';
+import { createUploadId } from '@/lib/upload-id';
 import {
   BookOpen,
   Camera,
@@ -226,14 +227,14 @@ export function ScannerApp({
   const selectFile = (file: File) =>
     void perform('准备照片', async () => {
       setCapture(await preparePhoto(file));
-      setUploadId(crypto.randomUUID());
+      setUploadId(createUploadId());
       stopCamera();
     });
   const takePhoto = () =>
     void perform('拍摄中', async () => {
       if (!video.current) throw new Error('摄像头尚未就绪。');
       setCapture(await preparePhoto(video.current));
-      setUploadId(crypto.randomUUID());
+      setUploadId(createUploadId());
       stopCamera();
     });
   const upload = () =>
@@ -790,6 +791,10 @@ export function ScannerApp({
             className="action"
             variant="outline"
             onClick={() => {
+              if (!navigator.clipboard) {
+                setError('当前 HTTP 页面不支持自动复制，请长按下方拍摄链接复制，或直接扫描二维码。');
+                return;
+              }
               navigator.clipboard
                 .writeText(`${location.origin}/scan/${sessionId}`)
                 .then(() => {
