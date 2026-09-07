@@ -1,0 +1,4 @@
+Tesseract.js 6.0.1 and Tesseract.js-core 6.0.0 are redistributed unchanged
+under the Apache License, Version 2.0. See the accompanying license files.
+Upstream: https://github.com/naptha/tesseract.js
+Upstream: https://github.com/naptha/tesseract.js-core

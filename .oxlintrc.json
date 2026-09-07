@@ -23,6 +23,9 @@
     "typeCheck": true
   },
   "ignorePatterns": [
+    "public/ocr/**",
+    "components/ui/**",
+    "hooks/use-mobile.ts",
     ".next/**",
     ".vinext/**",
     "out/**",

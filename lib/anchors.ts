@@ -1,0 +1,116 @@
+import type { TextSpan, Annotation, Box, Dimensions } from './types';
+import { z } from 'zod';
+const boxSchema = z.object({
+  x0: z.number().nonnegative(),
+  y0: z.number().nonnegative(),
+  x1: z.number().positive(),
+  y1: z.number().positive(),
+});
+export const spansSchema = z
+  .array(
+    z.object({
+      id: z.string().min(1).max(80),
+      side: z.enum(['left', 'right']),
+      text: z.string().min(1).max(1500),
+      confidence: z.number().min(0).max(100),
+      words: z
+        .array(
+          z.object({
+            text: z.string().min(1).max(200),
+            start: z.number().int().nonnegative(),
+            end: z.number().int().positive(),
+            box: boxSchema,
+          }),
+        )
+        .min(1)
+        .max(1500),
+    }),
+  )
+  .min(1)
+  .max(400);
+export function validateSpans(
+  spans: TextSpan[],
+  dimensions: Record<'left' | 'right', Dimensions>,
+) {
+  const ids = new Set<string>();
+  let total = 0;
+  for (const span of spans) {
+    if (ids.has(span.id)) throw new Error('文字编号重复。');
+    ids.add(span.id);
+    total += span.text.length;
+    let end = 0;
+    for (const word of span.words) {
+      const b = word.box,
+        d = dimensions[span.side];
+      if (
+        word.start < end ||
+        word.end <= word.start ||
+        span.text.slice(word.start, word.end) !== word.text ||
+        b.x1 <= b.x0 ||
+        b.y1 <= b.y0 ||
+        b.x1 > d.width ||
+        b.y1 > d.height
+      )
+        throw new Error('文字坐标或引用范围无效。');
+      end = word.end;
+    }
+  }
+  if (total > 35000) throw new Error('当前双页文字过多。');
+}
+export const aiSchema = z.object({
+  annotations: z
+    .array(
+      z.object({
+        comment: z.string().min(1).max(1400),
+        type: z.enum(['理解', '关键词', '结构', '思考']),
+        anchors: z
+          .array(
+            z.object({
+              span_id: z.string(),
+              quote: z.string().min(1).max(1500),
+            }),
+          )
+          .min(1)
+          .max(8),
+      }),
+    )
+    .max(12),
+});
+export function resolveAnnotations(
+  raw: z.infer<typeof aiSchema>,
+  spans: TextSpan[],
+): Annotation[] {
+  const index = new Map(spans.map((s) => [s.id, s]));
+  return raw.annotations.map((note, i) => ({
+    id: `note-${i + 1}`,
+    comment: note.comment,
+    type: note.type,
+    anchors: note.anchors.map((a) => {
+      const span = index.get(a.span_id);
+      if (!span) throw new Error('AI 引用了不存在的文字。');
+      const start = span.text.indexOf(a.quote);
+      if (start < 0 || span.text.indexOf(a.quote, start + 1) >= 0)
+        throw new Error('AI 引用无法唯一定位。');
+      const words = span.words.filter(
+        (w) => w.end > start && w.start < start + a.quote.length,
+      );
+      if (!words.length) throw new Error('AI 引用没有对应坐标。');
+      const boxes: Box[] = [];
+      for (const word of words) {
+        const last = boxes.at(-1),
+          b = word.box;
+        if (
+          last &&
+          Math.abs(last.y0 - b.y0) < Math.max(4, (last.y1 - last.y0) * 0.45) &&
+          b.x0 - last.x1 < Math.max(12, b.y1 - b.y0)
+        ) {
+          last.x0 = Math.min(last.x0, b.x0);
+          last.x1 = Math.max(last.x1, b.x1);
+          last.y0 = Math.min(last.y0, b.y0);
+          last.y1 = Math.max(last.y1, b.y1);
+        } else boxes.push({ ...b });
+      }
+      return { ...a, side: span.side, boxes };
+    }),
+  }));
+}
