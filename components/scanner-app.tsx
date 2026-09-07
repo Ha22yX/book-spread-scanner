@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { MarginalBook } from './marginal-book';
 import { LazyThumbnail } from './lazy-thumbnail';
 import { DetailCache, spreadVersion, summarizeSpread } from '@/lib/spread-summary';
+import { adjacentCapture, horizontalWheelDelta, revealOffset, navigationDirection } from '@/lib/reader-navigation';
 import { PipelineProgress } from './pipeline-progress';
 import { isProcessing } from '@/lib/pipeline';
 import { buildSentences } from '@/lib/sentences';
@@ -83,6 +84,7 @@ export function ScannerApp({
     [activeNote, setActiveNote] = useState(''),
     [tab, setTab] = useState('pages');
   const fileInput = useRef<HTMLInputElement>(null),
+    filmstrip = useRef<HTMLDivElement>(null),
     video = useRef<HTMLVideoElement>(null),
     stream = useRef<MediaStream | null>(null),
     highest = useRef(0),
@@ -360,12 +362,55 @@ export function ScannerApp({
     if (spread?.id === id) { setSelected(''); setActiveNote(''); setTab('pages'); }
     setDeleteTarget(null);
   });
-  const selectSpread = (id: string) => {
+  const selectSpread = useCallback((id: string) => {
     setSelected(id);
     setActiveNote('');
     setTab('pages');
-  };
+  }, []);
   const selectableSpreadIds = session?.spreads.map((s) => s.id).join('|') ?? '';
+  const currentSpreadId = spread?.id ?? '';
+  useEffect(() => {
+    const strip = filmstrip.current;
+    if (!strip || isPhone) return;
+    const wheel = (event: WheelEvent) => {
+      if (event.ctrlKey || strip.scrollWidth <= strip.clientWidth) return;
+      const delta = horizontalWheelDelta(event.deltaX, event.deltaY, event.deltaMode, strip.clientWidth);
+      if (!delta || !event.cancelable) return;
+      event.preventDefault();
+      strip.scrollLeft += delta;
+    };
+    strip.addEventListener('wheel', wheel, {passive:false});
+    return () => strip.removeEventListener('wheel', wheel);
+  }, [isPhone, selectableSpreadIds, camera, capture]);
+  useEffect(() => {
+    const strip = filmstrip.current;
+    if (!strip || isPhone) return;
+    const chosen = strip.querySelector<HTMLElement>('.film-item.chosen');
+    if (!chosen) return;
+    const item = chosen.getBoundingClientRect(), bounds = strip.getBoundingClientRect();
+    const left = revealOffset(item.left, item.right, bounds.left + 3, bounds.right - 3);
+    // Move only this horizontal strip, never scroll the document vertically.
+    if (left) strip.scrollBy({left, behavior:'instant'});
+  }, [isPhone, currentSpreadId, selectableSpreadIds, camera, capture]);
+  useEffect(() => {
+    if (isPhone || camera || capture || pairOpen || infoOpen || deleteTarget) return;
+    const keydown = (event: KeyboardEvent) => {
+      const direction = navigationDirection(event);
+      if (!direction || busyRef.current) return;
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role="slider"],[role="textbox"],[role="combobox"],[role="spinbutton"],[role="listbox"],[role="tablist"],[data-slot="dropdown-menu-trigger"]')) return;
+      if (document.querySelector('[role="dialog"],[role="alertdialog"],[role="menu"]')) return;
+      const next = adjacentCapture(selectableSpreadIds.split('|').filter(Boolean), currentSpreadId, direction);
+      event.preventDefault();
+      if (!next) return;
+      selectSpread(next);
+      if (target?.closest('.film-item')) {
+        filmstrip.current?.querySelector<HTMLElement>(`[data-capture-id="${CSS.escape(next)}"]`)?.focus({preventScroll:true});
+      }
+    };
+    document.addEventListener('keydown', keydown);
+    return () => document.removeEventListener('keydown', keydown);
+  }, [isPhone, camera, capture, pairOpen, infoOpen, deleteTarget, selectableSpreadIds, currentSpreadId, selectSpread]);
   useEffect(() => {
     const ctx = (
       document as unknown as {
@@ -670,12 +715,13 @@ export function ScannerApp({
             </div>
           ) : (
             <>
-              <div className="filmstrip" aria-label="已扫描的书页">
+              <div ref={filmstrip} className="filmstrip" aria-label="已扫描的书页；滚轮左右滚动，方向键切换拍摄" title="滚轮左右滚动 · ← → 切换拍摄">
                 {session.spreads.map((s) => (
                   <ContextMenu key={s.id}>
                   <ContextMenuTrigger render={<button type="button" aria-label={`第 ${s.sequence} 次拍摄，右键可删除`} disabled={busyNow} />}
                     className={`film-item ${spread?.id === s.id ? 'chosen' : ''}`}
                     aria-pressed={spread?.id === s.id}
+                    data-capture-id={s.id}
                     onClick={() => selectSpread(s.id)}
                     title="右键可删除这次拍摄"
                   >
