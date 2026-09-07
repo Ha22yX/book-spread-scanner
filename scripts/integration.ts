@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import jpeg from 'jpeg-js';
-import { createWorker, PSM } from 'tesseract.js';
-import { spansFromPage } from '../lib/ocr';
+import Ocr from '@gutenye/ocr-node';
+import { OCR_ENGINE, paddleLinesToSpans } from '../lib/paddle-lines';
 import type { Spread, ScanSession, TextSpan } from '../lib/types';
 const base = process.env.TEST_URL || 'http://localhost:3000';
 async function call<T>(path: string, init?: RequestInit) {
@@ -87,24 +87,11 @@ if (process.argv.includes('--ocr')) {
       Buffer.from(await response.arrayBuffer()),
     );
   }
-  mkdirSync('outputs/tessdata', { recursive: true });
-  const worker = await createWorker(['chi_sim', 'eng'], 1, {
-    cachePath: 'outputs/tessdata',
-    langPath: 'https://tessdata.projectnaptha.com/4.0.0',
-  });
+  const ocr = await Ocr.create({ onnxOptions: { intraOpNumThreads: 2 } });
   const spans: TextSpan[] = [];
-  try {
-    await worker.setParameters({ tessedit_pageseg_mode: PSM.AUTO });
-    for (const side of ['left', 'right'] as const) {
-      const { data } = await worker.recognize(
-        `outputs/test-${side}.jpg`,
-        {},
-        { blocks: true, text: true },
-      );
-      spans.push(...spansFromPage(data, side));
-    }
-  } finally {
-    await worker.terminate();
+  for (const side of ['left', 'right'] as const) {
+    const lines = await ocr.detect(`outputs/test-${side}.jpg`);
+    spans.push(...paddleLinesToSpans(lines, side, revised[side]));
   }
   assert.ok(spans.some((s) => s.side === 'left' && s.text.includes('阅读')));
   assert.ok(spans.some((s) => s.side === 'right' && s.text.includes('理解')));
@@ -115,11 +102,11 @@ if (process.argv.includes('--ocr')) {
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ revision: 2, spans }),
+        body: JSON.stringify({ revision: 2, spans, ocrEngine: OCR_ENGINE }),
       },
     );
     assert.equal(result.status, 'annotated');
-    assert.ok(result.annotations?.length);
+    assert.ok(result.annotations && result.annotations.length <= 2);
     assert.ok(
       result.annotations.every((n) =>
         n.anchors.every((a) => a.boxes.length > 0),

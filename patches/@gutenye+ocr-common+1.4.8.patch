@@ -1,0 +1,14 @@
+diff --git a/node_modules/@gutenye/ocr-common/build/models/Recognition.js b/node_modules/@gutenye/ocr-common/build/models/Recognition.js
+index 38e6fbd..8dd82b9 100644
+--- a/node_modules/@gutenye/ocr-common/build/models/Recognition.js
++++ b/node_modules/@gutenye/ocr-common/build/models/Recognition.js
+@@ -115,7 +115,8 @@ function calculateBox({ lines, lineImages, }) {
+         mainLine[i]['box'] = b;
+     }
+     mainLine = mainLine.filter((x) => x.mean >= 0.5);
+-    mainLine = afAfRec(mainLine);
++    // Preserve detector line polygons. Axis-aligned height merges adjacent slanted book lines.
++    mainLine.sort((a,b) => a.box.reduce((n,p)=>n+p[1],0)/4 - b.box.reduce((n,p)=>n+p[1],0)/4);
+     return mainLine;
+ }
+ function afAfRec(lines) {

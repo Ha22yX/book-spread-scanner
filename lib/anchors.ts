@@ -13,6 +13,16 @@ export const spansSchema = z
       side: z.enum(['left', 'right']),
       text: z.string().min(1).max(1500),
       confidence: z.number().min(0).max(100),
+      polygon: z
+        .array(
+          z.object({
+            x: z.number().nonnegative(),
+            y: z.number().nonnegative(),
+          }),
+        )
+        .length(4)
+        .optional(),
+      paragraphStart: z.boolean().optional(),
       words: z
         .array(
           z.object({
@@ -38,6 +48,14 @@ export function validateSpans(
     if (ids.has(span.id)) throw new Error('文字编号重复。');
     ids.add(span.id);
     total += span.text.length;
+    if (
+      span.polygon?.some(
+        (p) =>
+          p.x > dimensions[span.side].width ||
+          p.y > dimensions[span.side].height,
+      )
+    )
+      throw new Error('文字多边形超出图片。');
     let end = 0;
     for (const word of span.words) {
       const b = word.box,
@@ -110,7 +128,27 @@ export function resolveAnnotations(
           last.y1 = Math.max(last.y1, b.y1);
         } else boxes.push({ ...b });
       }
-      return { ...a, side: span.side, boxes };
+      return { ...a, side: span.side, boxes, polygon: span.polygon };
     }),
   }));
+}
+
+/** Reject a whole note if any anchor is invalid; never silently drop its evidence. */
+export function resolveVerifiedAnnotations(
+  raw: z.infer<typeof aiSchema>,
+  spans: TextSpan[],
+) {
+  const annotations: Annotation[] = [];
+  let omitted = 0;
+  for (const note of raw.annotations) {
+    try {
+      const resolved = resolveAnnotations({ annotations: [note] }, spans)[0];
+      annotations.push({ ...resolved, id: `note-${annotations.length + 1}` });
+    } catch {
+      omitted++;
+    }
+  }
+  if (raw.annotations.length && !annotations.length)
+    throw new Error('没有通过定位校验的批注');
+  return { annotations, omitted };
 }

@@ -1,4 +1,14 @@
-Tesseract.js 6.0.1 and Tesseract.js-core 6.0.0 are redistributed unchanged
+The main OCR pipeline uses Guten OCR 1.4.8 (MIT) with PaddleOCR PP-OCRv4
+Chinese/English detector, recognizer and dictionary (Apache License 2.0),
+and ONNX Runtime Web 1.29.0 (MIT). See paddle/ and onnx/ license files.
+Upstream: https://github.com/gutenye/ocr
+Upstream: https://github.com/PaddlePaddle/PaddleOCR
+Upstream: https://github.com/microsoft/onnxruntime
+Guten OCR's line grouping is modified via patches/ to preserve detected
+quadrilateral text lines on tilted book pages. js-clipper source encoding is
+normalized to UTF-8 via patches/ for Vite compatibility. Models are unchanged.
+
+Legacy comparison assets: Tesseract.js 6.0.1 and Tesseract.js-core 6.0.0 are redistributed unchanged
 under the Apache License, Version 2.0. See the accompanying license files.
 Upstream: https://github.com/naptha/tesseract.js
 Upstream: https://github.com/naptha/tesseract.js-core

@@ -3,6 +3,9 @@
 /* oxlint-disable jsx-a11y/prefer-tag-over-role -- SVG highlight rectangles use keyboard-accessible button roles; HTML buttons cannot be children of SVG. */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { MarginalBook } from './marginal-book';
+import { buildSentences } from '@/lib/sentences';
+import { OCR_ENGINE } from '@/lib/paddle-lines';
 import {
   BookOpen,
   Camera,
@@ -13,7 +16,6 @@ import {
   RotateCw,
   Scissors,
   Sparkles,
-  Download,
   Loader2,
   X,
   Copy,
@@ -31,7 +33,12 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Slider } from '@/components/ui/slider';
 import { api, preparePhoto, imageUrl } from '@/lib/client';
-import type { ScanSession, Spread, Side, Seam } from '@/lib/types';
+import type { ScanSession, Spread, Seam } from '@/lib/types';
+import {
+  previousSpreads,
+  englishWordCount,
+  type ReadingContext,
+} from '@/lib/reading-context';
 
 export function ScannerApp({
   mode,
@@ -265,17 +272,36 @@ export function ScannerApp({
   const generate = () =>
     void perform('准备识别文字', async () => {
       if (!spread) return;
-      const { recognizeSpread } = await import('@/lib/ocr');
-      const spans = spread.spans?.length
-        ? spread.spans
-        : await recognizeSpread(sessionId, spread, setBusy);
-      setBusy('GPT-5.6 正在阅读左右页并生成批注');
+      const { recognizeBook: recognizeSpread } =
+        await import('@/lib/paddle-ocr');
+      const history: ReadingContext[] = [];
+      for (const prior of previousSpreads(session?.spreads ?? [], spread)) {
+        const previous =
+          prior.ocrEngine === OCR_ENGINE && prior.spans?.length
+            ? prior.spans
+            : await recognizeSpread(sessionId, prior, (text) =>
+                setBusy(`读取前文 · 第 ${prior.sequence} 次拍摄 · ${text}`),
+              );
+        history.push({
+          spreadId: prior.id,
+          revision: prior.revision,
+          sequence: prior.sequence,
+          lines: previous.map((s) => ({ side: s.side, text: s.text })),
+        });
+      }
+      const spans = await recognizeSpread(sessionId, spread, setBusy);
+      setBusy(`GPT-5.6 正在联读前 ${history.length} 张照片与当前左右页`);
       const updated = await api<Spread>(
         `/api/sessions/${sessionId}/spreads/${spread.id}/annotate`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ revision: spread.revision, spans }),
+          body: JSON.stringify({
+            revision: spread.revision,
+            spans,
+            history,
+            ocrEngine: OCR_ENGINE,
+          }),
         },
       );
       updateSpread(updated);
@@ -292,6 +318,7 @@ export function ScannerApp({
     setActiveNote('');
     setTab('pages');
   };
+  const selectableSpreadIds = session?.spreads.map((s) => s.id).join('|') ?? '';
   useEffect(() => {
     const ctx = (
       document as unknown as {
@@ -317,10 +344,12 @@ export function ScannerApp({
       },
       annotations: { readOnlyHint: false, untrustedContentHint: true },
       execute: (input: unknown) => {
+        if (busyRef.current)
+          throw new Error('当前操作尚未完成，请稍后切换书页');
         const id = (input as { spreadId?: unknown })?.spreadId;
         if (
           typeof id !== 'string' ||
-          !session?.spreads.some((s) => s.id === id)
+          !selectableSpreadIds.split('|').filter(Boolean).includes(id)
         )
           throw new Error('扫描记录不存在');
         setSelected(id);
@@ -335,7 +364,7 @@ export function ScannerApp({
       ).catch(() => {});
     } catch {}
     return () => controller.abort();
-  }, [session]);
+  }, [selectableSpreadIds]);
   const busyNow = !!busy;
   return (
     <main className={`shell ${isPhone ? 'phone-shell' : ''}`}>
@@ -563,14 +592,14 @@ export function ScannerApp({
                     <span>03</span>
                     <div>
                       <h3>在电脑端生成批注</h3>
-                      <p>原文高亮与右侧批注一一对应。</p>
+                      <p>原文整行高亮，通过引导线连接页边英文批注。</p>
                     </div>
                   </li>
                 </ol>
                 <div className="note-tip">
                   <BookOpen size={18} />
                   <p>
-                    适合中文横排印刷书籍。第一版保留页面边缘，暂不展平书脊曲面。
+                    支持中英文横排印刷书籍。保留页面边缘，暂不展平书脊曲面。
                   </p>
                 </div>
               </aside>
@@ -635,140 +664,90 @@ export function ScannerApp({
                       />
                     </TabsContent>
                     <TabsContent value="pages">
-                      <div className="reading-grid">
-                        <div className="book-canvas">
-                          {(['left', 'right'] as const).map((side) => (
-                            <PageView
-                              key={side}
-                              session={sessionId}
-                              spread={spread}
-                              side={side}
-                              activeNote={activeNote}
-                              onNote={(id) => {
-                                setActiveNote(id);
-                                document.getElementById(id)?.scrollIntoView({
-                                  behavior: 'smooth',
-                                  block: 'nearest',
-                                });
-                              }}
-                            />
-                          ))}
-                        </div>
-                        <aside className="annotation-panel">
-                          <div className="annotation-heading">
-                            <div>
-                              <span className="eyebrow">READING NOTES</span>
-                              <h2>
-                                书页批注{' '}
-                                <span className="count">
-                                  {spread.annotations?.length || 0}
-                                </span>
-                              </h2>
-                            </div>
-                            <Sparkles size={22} />
-                          </div>
-                          {!isPhone && (
-                            <Button
-                              className="action generate-button"
-                              disabled={
-                                busyNow || spread.status === 'annotating'
-                              }
-                              onClick={generate}
-                            >
-                              <Sparkles />
-                              {spread.annotations?.length
-                                ? '重新生成批注'
-                                : '识别文字并生成批注'}
-                            </Button>
-                          )}
-                          {spread.status === 'annotating' && (
-                            <p className="muted">正在生成批注…</p>
-                          )}
-                          {spread.error && (
-                            <p className="inline-error">{spread.error}</p>
-                          )}
-                          {spread.spans?.some((s) => s.confidence < 60) && (
-                            <p className="quality-note">
-                              部分文字识别置信度较低，请在“识别文字”中核对原文。
-                            </p>
-                          )}
-                          {spread.annotations?.length ? (
-                            <div className="annotation-list">
-                              {spread.annotations.map((n, i) => (
-                                <button
-                                  id={n.id}
-                                  key={n.id}
-                                  className={`annotation-card ${activeNote === n.id ? 'active' : ''}`}
-                                  onMouseEnter={() => setActiveNote(n.id)}
-                                  onFocus={() => setActiveNote(n.id)}
-                                  onClick={() => setActiveNote(n.id)}
-                                >
-                                  <div className="annotation-meta">
-                                    <span className="note-number">
-                                      {String(i + 1).padStart(2, '0')}
-                                    </span>
-                                    <span>{n.type}</span>
-                                    <span>
-                                      {[
-                                        ...new Set(
-                                          n.anchors.map((a) =>
-                                            a.side === 'left' ? '左页' : '右页',
-                                          ),
-                                        ),
-                                      ].join(' + ')}
-                                    </span>
-                                  </div>
-                                  <blockquote>
-                                    {n.anchors.map((a) => a.quote).join('…')}
-                                  </blockquote>
-                                  <p>{n.comment}</p>
-                                </button>
-                              ))}
-                            </div>
-                          ) : (
-                            <div className="notes-empty">
-                              <BookOpen size={28} />
-                              <p>
-                                {isPhone
-                                  ? '照片已保存。请在电脑端确认分割并生成批注。'
-                                  : spread.status === 'annotated'
-                                    ? '本页没有可生成批注的清晰内容。'
-                                    : '确认分割后，识别页面文字并生成批注。点击批注可查看对应的原文。'}
-                              </p>
-                            </div>
-                          )}
-                          <p className="model-label">
-                            {spread.model || 'GPT-5.6 Sol'} · 批注由 AI 生成
+                      <div className="reading-actions">
+                        <div>
+                          <span className="eyebrow">MARGIN NOTES</span>
+                          <p>
+                            每张通常 1 处 · 简单英文 10–15 词 ·
+                            只标记重要情节与写法
                           </p>
-                        </aside>
+                        </div>
+                        {!isPhone && (
+                          <Button
+                            className="action"
+                            disabled={busyNow || spread.status === 'annotating'}
+                            onClick={generate}
+                          >
+                            <Sparkles />
+                            {spread.annotations?.length
+                              ? '重新识别并生成批注'
+                              : '识别文字并生成批注'}
+                          </Button>
+                        )}
                       </div>
+                      {spread.error && (
+                        <p className="inline-error">{spread.error}</p>
+                      )}
+                      {spread.annotationWarning && (
+                        <p className="quality-note">
+                          {spread.annotationWarning}
+                        </p>
+                      )}
+                      {spread.spans?.some((s) => s.confidence < 60) && (
+                        <p className="quality-note">
+                          部分 OCR
+                          文字不够清晰，请在“识别文字”中核对。完整句子由各行拼接，原图坐标保持不变。
+                        </p>
+                      )}
+                      <MarginalBook
+                        session={sessionId}
+                        spread={spread}
+                        activeNote={activeNote}
+                        onNote={setActiveNote}
+                      />
+                      <p className="model-label">
+                        {spread.model || 'GPT-5.6 Sol'} · 图片与原文联合理解 ·
+                        已参考前 {spread.contextSources?.length ?? 0} 张照片 ·{' '}
+                        {spread.annotations?.length ?? 0} 处批注 /{' '}
+                        {spread.annotations?.reduce(
+                          (n, a) => n + englishWordCount(a.comment),
+                          0,
+                        ) ?? 0}{' '}
+                        词
+                      </p>
+                      {!spread.annotations?.length && (
+                        <p className="muted">
+                          {spread.status === 'annotated'
+                            ? '这张照片没有识别到值得特别标记的内容，不强行凑批注。'
+                            : isPhone
+                              ? '照片已同步。请在电脑端生成批注。'
+                              : '确认左右分割后生成批注，笔记会出现在句子旁边。'}
+                        </p>
+                      )}
                     </TabsContent>
                     <TabsContent value="text">
-                      <div className="text-grid">
-                        {(['left', 'right'] as const).map((side) => (
-                          <article key={side} className="transcript">
-                            <h2>{side === 'left' ? '左页原文' : '右页原文'}</h2>
-                            <p className="muted">与图片保持相同的阅读顺序</p>
-                            {spread.spans
-                              ?.filter((s) => s.side === side)
-                              .map((s) => (
-                                <p
-                                  key={s.id}
-                                  className={
-                                    s.confidence < 60 ? 'uncertain-text' : ''
-                                  }
-                                >
-                                  {s.text}
-                                </p>
-                              ))}
-                            {!spread.spans?.some((s) => s.side === side) && (
-                              <p className="muted">
-                                尚未识别文字。请在左右页预览中生成批注。
-                              </p>
-                            )}
-                          </article>
+                      <article className="transcript joined-transcript">
+                        <h2>连续原文 · 先左页，再右页</h2>
+                        <p className="muted">
+                          按句连接换行与跨页内容；灰色标记表示来源页面。OCR
+                          仍可能有错字，请结合原图核对。
+                        </p>
+                        {buildSentences(spread.spans ?? []).map((s) => (
+                          <p key={s.id}>
+                            <small className="sentence-origin">
+                              {s.sides
+                                .map((side) =>
+                                  side === 'left' ? '左页' : '右页',
+                                )
+                                .join(' → ')}
+                            </small>
+                            {s.text}
+                          </p>
                         ))}
-                      </div>
+                        {!spread.spans?.length && (
+                          <p className="muted">尚未识别文字。</p>
+                        )}
+                      </article>
                     </TabsContent>
                   </Tabs>
                 </section>
@@ -830,87 +809,6 @@ export function ScannerApp({
         </DialogContent>
       </Dialog>
     </main>
-  );
-}
-
-function PageView({
-  session,
-  spread,
-  side,
-  activeNote,
-  onNote,
-}: {
-  session: string;
-  spread: Spread;
-  side: Side;
-  activeNote: string;
-  onNote: (id: string) => void;
-}) {
-  const dims = spread[side];
-  return (
-    <article className="book-page">
-      <div className="page-caption">
-        <span>{side === 'left' ? 'LEFT / 左页' : 'RIGHT / 右页'}</span>
-        <a
-          href={imageUrl(session, spread, side)}
-          download={`page-${spread.sequence * 2 - (side === 'left' ? 1 : 0)}.jpg`}
-          aria-label={`下载${side === 'left' ? '左' : '右'}页`}
-        >
-          <Download size={16} />
-        </a>
-      </div>
-      <div className="page-image">
-        <img
-          src={imageUrl(session, spread, side)}
-          alt={`第 ${spread.sequence * 2 - (side === 'left' ? 1 : 0)} 页，${side === 'left' ? '左页' : '右页'}分割结果`}
-        />
-        <svg
-          className="highlight-overlay"
-          viewBox={`0 0 ${dims.width} ${dims.height}`}
-          aria-label="批注对应原文"
-        >
-          {spread.annotations?.flatMap((note) =>
-            note.anchors
-              .filter((a) => a.side === side)
-              .flatMap((a, ai) =>
-                a.boxes.map((b, bi) => (
-                  <rect
-                    key={`${note.id}-${ai}-${bi}`}
-                    x={b.x0}
-                    y={b.y0}
-                    width={b.x1 - b.x0}
-                    height={b.y1 - b.y0}
-                    rx={2}
-                    className={
-                      activeNote === note.id
-                        ? 'highlight selected'
-                        : 'highlight'
-                    }
-                    onClick={() => onNote(note.id)}
-                    role="button"
-                    tabIndex={0}
-                    aria-label={`查看批注：${a.quote}`}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        onNote(note.id);
-                      }
-                    }}
-                  >
-                    <title>{a.quote}</title>
-                  </rect>
-                )),
-              ),
-          )}
-        </svg>
-      </div>
-      <span className="folio">
-        {String(spread.sequence * 2 - (side === 'left' ? 1 : 0)).padStart(
-          2,
-          '0',
-        )}
-      </span>
-    </article>
   );
 }
 

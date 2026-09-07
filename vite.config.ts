@@ -1,7 +1,7 @@
 import { sites } from '@openai/sites-vite-plugin';
 import tailwindcss from '@tailwindcss/postcss';
 import vinext from 'vinext';
-import { defineConfig } from 'vite';
+import { defineConfig, type ViteDevServer } from 'vite';
 import hostingConfig from './.openai/hosting.json';
 
 const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
@@ -45,11 +45,31 @@ export default defineConfig(async () => {
   const { cloudflare } = await import('@cloudflare/vite-plugin');
 
   return {
+    resolve: {
+      alias: [
+        { find: /^onnxruntime-web$/, replacement: 'onnxruntime-web/wasm' },
+      ],
+    },
+    optimizeDeps: {
+      include: ['tesseract.js', '@gutenye/ocr-browser', 'onnxruntime-web/wasm'],
+    },
     css: { postcss: { plugins: [tailwindcss()] } },
     server: isCodexSeatbeltSandbox
       ? { watch: { useFsEvents: false, usePolling: true } }
       : undefined,
     plugins: [
+      {
+        name: 'serve-onnx-runtime-module',
+        configureServer(server: ViteDevServer) {
+          // ORT imports its standalone Emscripten module at runtime. Vite's
+          // ?import marker must not route this copied public asset into transforms.
+          server.middlewares.use((request, _response, next) => {
+            if (request.url === '/ocr/onnx/ort-wasm-simd-threaded.mjs?import')
+              request.url = '/ocr/onnx/ort-wasm-simd-threaded.mjs';
+            next();
+          });
+        },
+      },
       vinext(),
       sites(),
       cloudflare({

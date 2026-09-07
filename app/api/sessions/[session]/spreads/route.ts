@@ -11,6 +11,8 @@ import {
 import { decodePhoto, saveSplit } from '@/lib/images';
 import { detectSeam } from '@/lib/split';
 import type { Spread } from '@/lib/types';
+import { env } from 'cloudflare:workers';
+import { detectVisionSeam } from '@/lib/vision-seam';
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ session: string }> },
@@ -48,8 +50,8 @@ export async function POST(
       .bind(id, session)
       .first<{ data: string }>();
     if (existing) return json(JSON.parse(existing.data));
-    const image = decodePhoto(buffer.buffer),
-      seam = detectSeam(image);
+    const image = decodePhoto(buffer.buffer);
+    let seam = detectSeam(image);
     const next = await db()
       .prepare(
         'UPDATE scan_sessions SET next_sequence=next_sequence+1 WHERE id=? AND next_sequence<100 RETURNING next_sequence',
@@ -58,6 +60,14 @@ export async function POST(
       .first<{ next_sequence: number }>();
     if (!next)
       throw new ApiError(400, '每个会话最多支持 100 次拍摄，请创建新会话。');
+    if (seam.confidence < 0.4 && env.OPENAI_API_KEY) {
+      seam =
+        (await detectVisionSeam(
+          image,
+          env.OPENAI_API_KEY,
+          env.OPENAI_MODEL || 'gpt-5.6-sol',
+        )) ?? seam;
+    }
     const prefix = `${session}/${id}/1`;
     await files().put(`${session}/${id}/original.jpg`, buffer, {
       httpMetadata: { contentType: 'image/jpeg' },

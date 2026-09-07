@@ -274,6 +274,26 @@
   gap: 24px;
   align-items: start;
 }
+.reading-actions { display:flex; align-items:center; justify-content:space-between; gap:20px; margin:18px 0; }
+.reading-actions p { margin:6px 0; color:#657184; font-size:13px; }
+.marginal-scroll { overflow-x:auto; border:1px solid #dedbd2; border-radius:10px; background:#faf8f2; }
+.marginal-desk { position:relative; min-width:900px; padding:24px 0; min-height:470px; }
+.marginal-pages { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px; width:63%; margin:0 auto; }
+.leader-overlay { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; overflow:visible; }
+.leader-overlay path { fill:none; stroke:#ac8336; stroke-width:1.5; stroke-linejoin:round; }
+.leader-overlay circle { fill:#ac8336; }
+.leader-overlay .leader-active path { stroke:#906920; stroke-width:2; }
+.margin-note { position:absolute; width:16%; border:0; border-left:2px solid #d6b46c; padding:8px 10px; color:#294566; text-align:left; background:#faf8f2; cursor:pointer; z-index:2; border-radius:0; }
+.margin-left { left:1.2%; }
+.margin-right { right:1.2%; }
+.margin-note.active { background:#f4eddc; border-color:#a87621; }
+.margin-note:focus-visible { outline:2px solid #315abe; outline-offset:4px; }
+.margin-note-text { display:block; font:italic 18px/1.5 'Segoe Print','Comic Sans MS',Georgia,cursive; overflow-wrap:break-word; }
+.margin-note-number { font-size:10px; letter-spacing:2px; color:#947744; display:block; margin-bottom:5px; }
+.margin-word-count { display:block; font-size:10px; color:#8e887d; margin-top:8px; font-style:normal; }
+.joined-transcript { max-width:850px; margin:20px auto; line-height:1.85; }
+.sentence-origin { color:#7d8794; background:#eef1f5; padding:2px 6px; border-radius:4px; margin-right:10px; white-space:nowrap; font-size:10px; }
+@media(max-width:650px) { .reading-actions { align-items:stretch; flex-direction:column; } .marginal-scroll::before { content:'左右滑动查看整张书页和页边笔记'; display:block; padding:10px 16px; font-size:12px; color:#7a7364; position:sticky; left:0; } }
 .book-canvas {
   background: #e5e9f0;
   border: 1px solid #d8dee8;
