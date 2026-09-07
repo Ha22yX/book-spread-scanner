@@ -24,7 +24,10 @@ import {
   Plus,
   Monitor,
   ScanLine,
+  Trash2,
 } from 'lucide-react';
+import { ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem } from '@/components/ui/context-menu';
+import { AlertDialog, AlertDialogContent, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -53,6 +56,8 @@ export function ScannerApp({
     [pairOpen, setPairOpen] = useState(false),
     [qr, setQr] = useState(''),
     [copied, setCopied] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Spread | null>(null);
+  const removedIds = useRef(new Set<string>());
   const [camera, setCamera] = useState(false),
     [cameraReady, setCameraReady] = useState(false),
     [captureData, setCaptureData] = useState<{
@@ -147,6 +152,7 @@ export function ScannerApp({
       try {
         const data = await api<ScanSession>(`/api/sessions/${sessionId}`);
         if (!alive) return;
+        data.spreads = data.spreads.filter((s) => !removedIds.current.has(s.id));
         setSession(data);
         const last = data.spreads.at(-1);
         if (last && last.sequence > highest.current) {
@@ -289,6 +295,15 @@ export function ScannerApp({
       await ensureSession();
       setPairOpen(true);
     });
+  const deleteCapture = () => void perform('删除拍摄记录', async () => {
+    if (!deleteTarget) return;
+    const id = deleteTarget.id;
+    await api(`/api/sessions/${sessionId}/spreads/${id}`, { method: 'DELETE' });
+    removedIds.current.add(id);
+    setSession((current) => current ? { ...current, spreads: current.spreads.filter((s) => s.id !== id) } : current);
+    if (spread?.id === id) { setSelected(''); setActiveNote(''); setTab('pages'); }
+    setDeleteTarget(null);
+  });
   const selectSpread = (id: string) => {
     setSelected(id);
     setActiveNote('');
@@ -584,12 +599,12 @@ export function ScannerApp({
             <>
               <div className="filmstrip" aria-label="已扫描的书页">
                 {session.spreads.map((s) => (
-                  <button
-                    key={s.id}
+                  <ContextMenu key={s.id}>
+                  <ContextMenuTrigger render={<button type="button" aria-label={`第 ${s.sequence} 次拍摄，右键可删除`} disabled={busyNow} />}
                     className={`film-item ${spread?.id === s.id ? 'chosen' : ''}`}
                     aria-pressed={spread?.id === s.id}
-                    disabled={busyNow}
                     onClick={() => selectSpread(s.id)}
+                    title="右键可删除这次拍摄"
                   >
                     <img src={imageUrl(sessionId, s, 'original')} alt="" />
                     <span>
@@ -603,7 +618,13 @@ export function ScannerApp({
                       </small>
                     </span>
                     {s.status === 'annotated' && <Check size={15} />}
-                  </button>
+                  </ContextMenuTrigger>
+                  <ContextMenuContent>
+                    <ContextMenuItem variant="destructive" disabled={busyNow} onClick={() => setDeleteTarget(s)}>
+                      <Trash2 /> 删除第 {s.sequence} 次拍摄
+                    </ContextMenuItem>
+                  </ContextMenuContent>
+                  </ContextMenu>
                 ))}
                 <Button
                   variant="ghost"
@@ -778,6 +799,21 @@ export function ScannerApp({
           </footer>
         )}
       </section>
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open && !busyRef.current) setDeleteTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogTitle>删除第 {deleteTarget?.sequence} 次拍摄？</AlertDialogTitle>
+          <AlertDialogDescription>
+            将删除这张原图、左右页、识别文字和批注，无法恢复。正在处理的结果不会再保存；后续生成批注时不再使用这张照片。其他拍摄及其编号保持不变。
+          </AlertDialogDescription>
+          {error && <p className="inline-error" role="alert">{error}</p>}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busyNow}>取消</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" disabled={busyNow} onClick={deleteCapture}>
+              {busyNow ? '正在删除…' : '确认删除'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <Dialog open={pairOpen} onOpenChange={setPairOpen}>
         <DialogContent className="pair-dialog">
           <DialogTitle>用手机连接这张书桌</DialogTitle>

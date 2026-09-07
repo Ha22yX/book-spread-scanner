@@ -46,9 +46,10 @@ export async function POST(
     const id = request.headers.get('x-upload-id') || crypto.randomUUID();
     if (!uuid(id)) throw new ApiError(400, '上传编号无效。');
     const existing = await db()
-      .prepare('SELECT data FROM spreads WHERE id=? AND session_id=?')
+      .prepare('SELECT data,status FROM spreads WHERE id=? AND session_id=?')
       .bind(id, session)
-      .first<{ data: string }>();
+      .first<{ data: string; status: string }>();
+    if (existing?.status === 'deleted') throw new ApiError(410, '这次拍摄已删除，请重新拍摄。');
     if (existing) return json(JSON.parse(existing.data));
     const image = decodePhoto(buffer.buffer);
     const automatic = !!env.PROCESSOR_TOKEN;

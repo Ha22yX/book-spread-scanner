@@ -67,7 +67,7 @@ export async function POST(
     }
     const priorRows = await db()
       .prepare(
-        'SELECT data,revision FROM spreads WHERE session_id=? AND sequence<? ORDER BY sequence DESC LIMIT 2',
+        "SELECT data,revision FROM spreads WHERE session_id=? AND sequence<? AND status!='deleted' ORDER BY sequence DESC LIMIT 2",
       )
       .bind(session, value.sequence)
       .all<{ data: string; revision: number }>();

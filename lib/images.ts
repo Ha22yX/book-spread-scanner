@@ -1,5 +1,6 @@
 import jpeg from 'jpeg-js';
-import { ApiError, files } from './server';
+import { ApiError, files, db } from './server';
+import { removeSpreadFiles } from './delete-spread';
 import { splitPixels, type Pixels } from './split';
 import type { Seam } from './types';
 export function decodePhoto(buffer: ArrayBuffer): Pixels {
@@ -20,16 +21,27 @@ export function decodePhoto(buffer: ArrayBuffer): Pixels {
   }
 }
 export async function saveSplit(prefix: string, image: Pixels, seam: Seam) {
+  const [session, id] = prefix.split('/');
+  const checkDeleted = async () => {
+    const row = await db().prepare('SELECT status FROM spreads WHERE id=? AND session_id=?').bind(id, session).first<{status: string}>();
+    if (row?.status === 'deleted') {
+      await removeSpreadFiles(files(), `${session}/${id}/`);
+      throw new ApiError(410, '这次拍摄已删除。');
+    }
+  };
   const dims = {} as Record<
     'left' | 'right',
     { width: number; height: number }
   >;
   for (const side of ['left', 'right'] as const) {
+    await checkDeleted();
     const p = splitPixels(image, seam, side);
     const encoded = jpeg.encode(p, 88);
     await files().put(`${prefix}/${side}.jpg`, new Uint8Array(encoded.data), {
       httpMetadata: { contentType: 'image/jpeg' },
     });
+    // A delete can race the awaited R2 write; clean up those late bytes too.
+    await checkDeleted();
     dims[side] = { width: p.width, height: p.height };
   }
   return dims;

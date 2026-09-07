@@ -14,7 +14,7 @@ export async function GET(
       .run();
     const { results } = await db()
       .prepare(
-        'SELECT data,status,revision FROM spreads WHERE session_id=? ORDER BY sequence',
+        "SELECT data,status,revision FROM spreads WHERE session_id=? AND status!='deleted' ORDER BY sequence",
       )
       .bind(session)
       .all<{ data: string; status: string; revision: number }>();

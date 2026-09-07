@@ -178,7 +178,7 @@ export async function POST(request: Request) {
         .parse(input.contextSources);
       const prior = await db()
         .prepare(
-          'SELECT id,revision,sequence FROM spreads WHERE session_id=? AND sequence<? ORDER BY sequence DESC LIMIT 2',
+          "SELECT id,revision,sequence FROM spreads WHERE session_id=? AND sequence<? AND status!='deleted' ORDER BY sequence DESC LIMIT 2",
         )
         .bind(session, value.sequence)
         .all<{ id: string; revision: number; sequence: number }>();

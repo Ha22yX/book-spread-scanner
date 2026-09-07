@@ -28,7 +28,7 @@ export async function getSpread(session: string, id: string) {
   if (!uuid(id)) throw new ApiError(404, '书页不存在。');
   const row = await db()
     .prepare(
-      'SELECT data,revision,status,job_started FROM spreads WHERE id=? AND session_id=?',
+      "SELECT data,revision,status,job_started FROM spreads WHERE id=? AND session_id=? AND status!='deleted'",
     )
     .bind(id, session)
     .first<{
