@@ -3,6 +3,11 @@ import { ApiError, files, db } from './server';
 import { removeSpreadFiles } from './delete-spread';
 import { splitPixels, type Pixels } from './split';
 import type { Seam } from './types';
+import { thumbnailPixels } from './thumbnail';
+export async function saveThumbnail(prefix: string, image: Pixels) {
+  const encoded = jpeg.encode(thumbnailPixels(image), 72);
+  await files().put(`${prefix}/thumbnail.jpg`, new Uint8Array(encoded.data), { httpMetadata: {contentType:'image/jpeg'} });
+}
 export function decodePhoto(buffer: ArrayBuffer): Pixels {
   try {
     const decoded = jpeg.decode(new Uint8Array(buffer), {

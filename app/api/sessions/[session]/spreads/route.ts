@@ -8,7 +8,7 @@ import {
   ApiError,
   uuid,
 } from '@/lib/server';
-import { decodePhoto, saveSplit } from '@/lib/images';
+import { decodePhoto, saveSplit, saveThumbnail } from '@/lib/images';
 import { detectSeam } from '@/lib/split';
 import type { Spread } from '@/lib/types';
 import { env } from 'cloudflare:workers';
@@ -77,6 +77,7 @@ export async function POST(
       httpMetadata: { contentType: 'image/jpeg' },
     });
     const dims = automatic ? {left:{width:Math.floor(image.width/2),height:image.height},right:{width:Math.ceil(image.width/2),height:image.height}} : await saveSplit(prefix, image, seam);
+    await saveThumbnail(`${session}/${id}`, image);
     const spread: Spread = {
       id,
       sequence: next.next_sequence,

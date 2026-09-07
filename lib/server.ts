@@ -49,6 +49,15 @@ export function json(data: unknown, status = 200) {
     headers: { 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' },
   });
 }
+export async function conditionalJson(request: Request, data: unknown) {
+  const body = JSON.stringify(data);
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(body));
+  const etag = '"' + Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('') + '"';
+  const unchanged = request.headers.get('if-none-match') === etag;
+  return new Response(unchanged ? null : body, { status: unchanged ? 304 : 200, headers: {
+    'ETag': etag, 'Cache-Control': 'private, no-cache', 'Content-Type': 'application/json', 'Referrer-Policy': 'no-referrer',
+  } });
+}
 export function failure(error: unknown) {
   if (error instanceof ApiError)
     return json({ error: error.message }, error.status);

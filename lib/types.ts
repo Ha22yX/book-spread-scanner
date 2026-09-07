@@ -30,6 +30,8 @@ export type Annotation = {
   }[];
 };
 export type Spread = {
+  /** Lightweight list invalidation hint, not OCR data. */
+  contentBytes?: number;
   id: string;
   sequence: number;
   created_at: number;

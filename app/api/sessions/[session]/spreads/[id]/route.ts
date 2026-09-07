@@ -1,5 +1,13 @@
-import { checkOrigin, requireSession, uuid, db, files, json, failure, ApiError } from '@/lib/server';
+import { checkOrigin, requireSession, uuid, db, files, json, failure, ApiError, getSpread, conditionalJson } from '@/lib/server';
 import { DELETE_SPREAD_SQL, removeSpreadFiles } from '@/lib/delete-spread';
+
+export async function GET(request: Request, { params }: { params: Promise<{session: string; id: string}> }) {
+  try {
+    const {session, id} = await params;
+    const {value} = await getSpread(session, id);
+    return conditionalJson(request, value);
+  } catch (error) { return failure(error); }
+}
 
 export async function DELETE(request: Request, { params }: { params: Promise<{session: string; id: string}> }) {
   try {

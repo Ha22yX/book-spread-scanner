@@ -1,9 +1,11 @@
 'use client';
 /* oxlint-disable nextjs/no-img-element -- OCR overlays must use the exact uploaded pixels, including blob previews and authenticated image endpoints. */
 /* oxlint-disable jsx-a11y/prefer-tag-over-role -- SVG highlight rectangles use keyboard-accessible button roles; HTML buttons cannot be children of SVG. */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { MarginalBook } from './marginal-book';
+import { LazyThumbnail } from './lazy-thumbnail';
+import { DetailCache, spreadVersion, summarizeSpread } from '@/lib/spread-summary';
 import { PipelineProgress } from './pipeline-progress';
 import { isProcessing } from '@/lib/pipeline';
 import { buildSentences } from '@/lib/sentences';
@@ -58,6 +60,10 @@ export function ScannerApp({
     [copied, setCopied] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Spread | null>(null);
   const removedIds = useRef(new Set<string>());
+  const detailCache = useRef(new DetailCache(3));
+  const [detail, setDetail] = useState<{key:string; value:Spread} | null>(null);
+  const [detailError, setDetailError] = useState('');
+  const [detailRetry, setDetailRetry] = useState(0);
   const [camera, setCamera] = useState(false),
     [cameraReady, setCameraReady] = useState(false),
     [captureData, setCaptureData] = useState<{
@@ -77,8 +83,25 @@ export function ScannerApp({
     highest = useRef(0),
     busyRef = useRef(false);
   const isPhone = mode === 'scan';
-  const spread =
+  const summary =
     session?.spreads.find((s) => s.id === selected) || session?.spreads.at(-1);
+  const detailKey = summary ? spreadVersion(summary) : '';
+  const spread = detail?.key === detailKey ? detail.value : summary;
+  const detailLoading = !!summary && !isProcessing(summary) && detail?.key !== detailKey;
+  const sentences = useMemo(() => buildSentences(spread?.spans ?? []), [spread?.spans]);
+  useEffect(() => {
+    if (!summary || isProcessing(summary)) return;
+    const controller = new AbortController();
+    const cached = detailCache.current.get(detailKey);
+    void (cached ? Promise.resolve(cached) : api<Spread>(`/api/sessions/${sessionId}/spreads/${summary.id}`, {signal:controller.signal}))
+      .then((value) => {
+        if (controller.signal.aborted || removedIds.current.has(value.id)) return;
+        detailCache.current.set(detailKey, value);
+        setDetailError('');
+        setDetail({key:detailKey, value});
+      }).catch((e: Error) => { if (!controller.signal.aborted) setDetailError(e.message); });
+    return () => controller.abort();
+  }, [sessionId, summary, detailKey, detailRetry]);
   const stopCamera = useCallback(() => {
     stream.current?.getTracks().forEach((t) => t.stop());
     stream.current = null;
@@ -148,12 +171,32 @@ export function ScannerApp({
     if (!sessionId) return;
     let alive = true;
     let timer: ReturnType<typeof setTimeout>;
+    let etag = '';
+    let pending = false;
+    let processing = false;
+    const controller = new AbortController();
     const poll = async () => {
+      if (!alive || pending) return;
+      if (document.hidden) { timer = setTimeout(poll, 15000); return; }
+      pending = true;
       try {
-        const data = await api<ScanSession>(`/api/sessions/${sessionId}`);
+        const response = await fetch(`/api/sessions/${sessionId}?summary=1`, {
+          headers: etag ? {'If-None-Match':etag} : {}, cache:'no-store', signal:controller.signal,
+        });
+        if (response.status === 304) return;
+        if (!response.ok) throw new Error('无法同步拍摄进度，请检查连接或登录状态。');
+        const data = await response.json() as ScanSession;
         if (!alive) return;
+        etag = response.headers.get('etag') || '';
         data.spreads = data.spreads.filter((s) => !removedIds.current.has(s.id));
-        setSession(data);
+        processing = data.spreads.some(isProcessing);
+        setSession((previous) => {
+          const old = new Map(previous?.spreads.map((s) => [s.id, s]));
+          return {...data, spreads:data.spreads.map((s) => {
+            const existing = old.get(s.id);
+            return existing && spreadVersion(existing) === spreadVersion(s) ? existing : s;
+          })};
+        });
         const last = data.spreads.at(-1);
         if (last && last.sequence > highest.current) {
           highest.current = last.sequence;
@@ -162,13 +205,18 @@ export function ScannerApp({
       } catch (e) {
         if (alive) setError((e as Error).message);
       } finally {
-        if (alive) timer = setTimeout(poll, 1500);
+        pending = false;
+        if (alive) timer = setTimeout(poll, processing ? 1500 : 4000);
       }
     };
     void poll();
+    const wake = () => { if (!document.hidden) { clearTimeout(timer); void poll(); } };
+    document.addEventListener('visibilitychange', wake);
     return () => {
       alive = false;
       clearTimeout(timer);
+      controller.abort();
+      document.removeEventListener('visibilitychange', wake);
     };
   }, [sessionId]);
   useEffect(() => {
@@ -213,13 +261,15 @@ export function ScannerApp({
     }
   };
   const updateSpread = (value: Spread) => {
+    detailCache.current.set(spreadVersion(value), value);
+    setDetail({key:spreadVersion(value), value});
     setSession((s) =>
       s
         ? {
             ...s,
             spreads: [
               ...s.spreads.filter((x) => x.id !== value.id),
-              value,
+              summarizeSpread(value),
             ].sort((a, b) => a.sequence - b.sequence),
           }
         : s,
@@ -300,6 +350,7 @@ export function ScannerApp({
     const id = deleteTarget.id;
     await api(`/api/sessions/${sessionId}/spreads/${id}`, { method: 'DELETE' });
     removedIds.current.add(id);
+    detailCache.current.clear();
     setSession((current) => current ? { ...current, spreads: current.spreads.filter((s) => s.id !== id) } : current);
     if (spread?.id === id) { setSelected(''); setActiveNote(''); setTab('pages'); }
     setDeleteTarget(null);
@@ -606,7 +657,7 @@ export function ScannerApp({
                     onClick={() => selectSpread(s.id)}
                     title="右键可删除这次拍摄"
                   >
-                    <img src={imageUrl(sessionId, s, 'original')} alt="" />
+                    <LazyThumbnail session={sessionId} id={s.id} />
                     <span>
                       第 {s.sequence} 次拍摄
                       <small>
@@ -641,6 +692,9 @@ export function ScannerApp({
               {spread && (
                 <section className="review-section">
                   <PipelineProgress spread={spread} />
+                  {detailLoading && <div className="detail-loading" role="status">
+                    {detailError ? <><span>{detailError}</span><Button variant="outline" onClick={() => setDetailRetry((n) => n + 1)}>重新加载</Button></> : <><Loader2 className="spin" size={16} /> 正在读取这张照片的批注…</>}
+                  </div>}
                   <Tabs
                     value={tab}
                     onValueChange={(value) => setTab(String(value))}
@@ -684,7 +738,7 @@ export function ScannerApp({
                         {!isPhone && (
                           <Button
                             className="action"
-                            disabled={busyNow || isProcessing(spread)}
+                            disabled={busyNow || isProcessing(spread) || detailLoading}
                             onClick={generate}
                           >
                             <Sparkles />
@@ -738,7 +792,7 @@ export function ScannerApp({
                         ) ?? 0}{' '}
                         词
                       </p>
-                      {!spread.annotations?.length && (
+                      {!detailLoading && !spread.annotations?.length && (
                         <p className="muted">
                           {spread.status === 'annotated'
                             ? '这张照片没有识别到值得特别标记的内容，不强行凑批注。'
@@ -757,7 +811,7 @@ export function ScannerApp({
                           按句连接换行与跨页内容；灰色标记表示来源页面。OCR
                           仍可能有错字，请结合原图核对。
                         </p>
-                        {buildSentences(spread.spans ?? []).map((s) => (
+                        {sentences.map((s) => (
                           <p key={s.id}>
                             <small className="sentence-origin">
                               {s.sides
