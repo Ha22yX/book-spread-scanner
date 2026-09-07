@@ -4,6 +4,15 @@ import { DatabaseSync } from 'node:sqlite';
 import { SUMMARY_SQL, summarizeSpread, spreadVersion, DetailCache } from '../lib/spread-summary';
 import { thumbnailPixels } from '../lib/thumbnail';
 import type { Spread } from '../lib/types';
+import { etagMatches } from '../lib/http-cache';
+
+void test('conditional GET accepts gzip proxy weak ETags and lists', () => {
+  assert.ok(etagMatches('W/"abc"','"abc"'));
+  assert.ok(etagMatches('"old", W/"abc"','"abc"'));
+  assert.ok(etagMatches('*','"abc"'));
+  assert.equal(etagMatches(null,'"abc"'),false);
+  assert.equal(etagMatches('W/"old"','"abc"'),false);
+});
 
 export function sampleSpread(sequence: number): Spread {
   return { id:crypto.randomUUID(), sequence, created_at:sequence, revision:1,

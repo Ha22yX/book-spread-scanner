@@ -1,5 +1,6 @@
 import { env } from 'cloudflare:workers';
 import type { Spread } from './types';
+import { etagMatches } from './http-cache';
 export const db = () => env.DB;
 export const files = () => env.FILES;
 export class ApiError extends Error {
@@ -53,7 +54,7 @@ export async function conditionalJson(request: Request, data: unknown) {
   const body = JSON.stringify(data);
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(body));
   const etag = '"' + Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('') + '"';
-  const unchanged = request.headers.get('if-none-match') === etag;
+  const unchanged = etagMatches(request.headers.get('if-none-match'), etag);
   return new Response(unchanged ? null : body, { status: unchanged ? 304 : 200, headers: {
     'ETag': etag, 'Cache-Control': 'private, no-cache', 'Content-Type': 'application/json', 'Referrer-Policy': 'no-referrer',
   } });

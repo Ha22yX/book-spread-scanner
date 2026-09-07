@@ -1,6 +1,7 @@
 import { getSpread, files, ApiError, failure } from '@/lib/server';
 import { decodePhoto, saveThumbnail } from '@/lib/images';
 import { removeSpreadFiles } from '@/lib/delete-spread';
+import { etagMatches } from '@/lib/http-cache';
 export async function GET(
   request: Request,
   {
@@ -33,7 +34,7 @@ export async function GET(
       object = await files().get(key);
     }
     if (!object) throw new ApiError(404, '照片不存在。');
-    const unchanged = request.headers.get('if-none-match') === object.httpEtag;
+    const unchanged = etagMatches(request.headers.get('if-none-match'), object.httpEtag);
     return new Response(unchanged ? null : object.body, {
       status: unchanged ? 304 : 200,
       headers: {
