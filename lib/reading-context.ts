@@ -26,6 +26,7 @@ export function readingInput(spans: TextSpan[], history: ReadingContext[]) {
       .filter((s) => s.anchors.length <= 6 && s.text.length <= 550)
       .map((s) => ({
         sentence_id: s.id,
+        ocr_line_count: s.anchors.length,
         pages: s.sides,
         text: s.text,
       })),

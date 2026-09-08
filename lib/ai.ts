@@ -8,6 +8,7 @@ import {
 } from './reading-context';
 import { buildSentences } from './sentences';
 import { validAnnotationComment } from './annotation-style';
+import { selectedAnchors } from './selected-anchors';
 export class ModelError extends Error {}
 const outputSchema = z.object({
   annotations: z
@@ -26,7 +27,8 @@ export async function annotate(
   model: string,
   history: ReadingContext[] = [],
   photoDataUrl?: string,
-) {
+  repair = false,
+): Promise<{ annotations: Annotation[]; omitted: number }> {
   const sentences = buildSentences(spans).filter(
     (s) => s.anchors.length <= 6 && s.text.length <= 550,
   );
@@ -43,7 +45,7 @@ export async function annotate(
       store: false,
       reasoning: { effort: 'low' },
       max_output_tokens: 3500,
-      instructions: ANNOTATION_PROMPT,
+      instructions: ANNOTATION_PROMPT + (repair ? '\nYour previous attempt failed validation. Return at most ONE note with 4–8 simple English words and exactly ONE current sentence_id. Do not include any longer note.' : ''),
       input: [
         {
           role: 'user',
@@ -137,13 +139,7 @@ export async function annotate(
     try {
       if (!validAnnotationComment(note.comment))
         throw new Error('Invalid length or language');
-      const anchors = [...new Set(note.sentence_ids)].flatMap((id) => {
-        const sentence = sentences.find((s) => s.id === id);
-        if (!sentence) throw new Error('Invalid sentence');
-        return sentence.anchors;
-      });
-      if (new Set(anchors.map((a) => a.span_id)).size > 8)
-        throw new Error('Highlight too broad');
+      const anchors = selectedAnchors(note.sentence_ids, sentences, spans);
       const resolved = resolveAnnotations(
         aiSchema.parse({ annotations: [{ comment: note.comment, type: note.type, anchors }] }),
         spans,
@@ -153,6 +149,8 @@ export async function annotate(
       omitted++;
     }
   }
+  if (parsed.annotations.length && !annotations.length && !repair)
+    return annotate(spans, key, model, history, photoDataUrl, true);
   if (parsed.annotations.length && !annotations.length)
     throw new ModelError('批注未通过句子定位或长度校验，请重新生成。');
   return { annotations, omitted };

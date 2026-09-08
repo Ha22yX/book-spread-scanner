@@ -24,6 +24,7 @@ import { ANNOTATION_PROMPT_VERSION } from '@/lib/prompts';
 import { validAnnotationComment } from '@/lib/annotation-style';
 import type { Spread } from '@/lib/types';
 import { PRESENCE_KEY } from '@/lib/processor-health';
+import { PRIOR_CONTEXT_SQL } from '@/lib/processor-context';
 
 // Only the local background processor knows this token; never expose it to browsers.
 export async function POST(request: Request) {
@@ -89,6 +90,15 @@ export async function POST(request: Request) {
     const { value, row } = await getSpread(session, id);
     if (row.status !== 'processing' || row.job_started !== lease)
       throw new ApiError(409, '任务已由其他处理器接管。');
+    if (input.action === 'context') {
+      const prior = await db().prepare(PRIOR_CONTEXT_SQL).bind(session, value.sequence)
+        .all<{ data: string; status: string; revision: number }>();
+      return json({ spreads: prior.results.reverse().map((p) => {
+        const data = JSON.parse(p.data) as Spread;
+        delete data.annotations;
+        return { ...data, status: p.status, revision: p.revision };
+      }) });
+    }
     const save = async () => {
       value.pipeline!.updatedAt = Date.now();
       const result = await db()

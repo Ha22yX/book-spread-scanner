@@ -98,8 +98,8 @@ for (const spread of final.spreads) {
   assert.equal(spread.contextSources?.length, spread.sequence - 1);
   for (const note of spread.annotations!) {
     assert.ok(
-      englishWordCount(note.comment) >= 10 &&
-        englishWordCount(note.comment) <= 25,
+      englishWordCount(note.comment) >= 1 &&
+        englishWordCount(note.comment) <= 10,
     );
     assert.ok(note.anchors.length <= 8);
   }

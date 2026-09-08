@@ -28,10 +28,29 @@ void test('generation keeps short English intact but never returns an overlong n
   const span: TextSpan = {id:'L1',side:'left',text,confidence:98,words:[{text,start:0,end:text.length,box:{x0:1,y0:1,x1:100,y1:20}}]};
   const original = globalThis.fetch;
   let comment = 'Her work becomes her whole world.';
-  globalThis.fetch = async () => Response.json({status:'completed',output:[{content:[{type:'output_text',text:JSON.stringify({annotations:[{type:'结构',comment,sentence_ids:['S1']}]})}]}]});
+  let calls = 0;
+  globalThis.fetch = async () => { calls++; return Response.json({status:'completed',output:[{content:[{type:'output_text',text:JSON.stringify({annotations:[{type:'结构',comment,sentence_ids:['S1']}]})}]}]}); };
   try {
     assert.equal((await annotate([span],'test-key','gpt-5.6-sol')).annotations[0].comment, comment);
     comment = 'The shop now feels like her whole world and only family.';
+    calls = 0;
     await assert.rejects(annotate([span],'test-key','gpt-5.6-sol'), /校验/);
+    assert.equal(calls, 2, 'invalid output gets only one repair, never an infinite loop');
+  } finally { globalThis.fetch = original; }
+});
+
+void test('one repair recovers an overlong note without truncating the answer', async () => {
+  const text = 'The shop was her whole world.';
+  const span: TextSpan = {id:'L1',side:'left',text,confidence:98,words:[{text,start:0,end:text.length,box:{x0:1,y0:1,x1:100,y1:20}}]};
+  const original = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    const comment = ++calls === 1 ? 'The shop now feels like her whole world and only family.' : 'Work becomes her whole world.';
+    return Response.json({status:'completed',output:[{content:[{type:'output_text',text:JSON.stringify({annotations:[{type:'结构',comment,sentence_ids:['S1']}]})}]}]});
+  };
+  try {
+    const result = await annotate([span], 'test-key', 'gpt-5.6-sol');
+    assert.equal(calls, 2);
+    assert.equal(result.annotations[0].comment, 'Work becomes her whole world.');
   } finally { globalThis.fetch = original; }
 });

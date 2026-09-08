@@ -22,7 +22,7 @@ void test('Responses request combines current photo, previous original text and 
     assert.ok(body.includes('current_photo'));
   } finally {globalThis.fetch=original;}
 });
-void test('overlapping sentences cannot send nine anchors through an eight-anchor server contract', async () => {
+void test('overlapping sentences merge their shared OCR line into eight valid anchors', async () => {
   const parts = ['She worked', 'every day', 'inside the', 'little shop', 'without rest. She felt', 'like the', 'shop was', 'her whole world.'];
   const spans: TextSpan[] = parts.map((text, i) => ({ id:`L-${i}`, side:'left', text, confidence:98,
     words:[{text,start:0,end:text.length,box:{x0:10,y0:10+i*25,x1:290,y1:30+i*25}}] }));
@@ -32,6 +32,8 @@ void test('overlapping sentences cannot send nine anchors through an eight-ancho
   const original = globalThis.fetch;
   globalThis.fetch = async () => Response.json({status:'completed',output:[{content:[{type:'output_text',text:JSON.stringify({annotations:[{type:'结构',comment:'The shop shapes her whole life.',sentence_ids:sentences.map((s) => s.id)}]})}]}]});
   try {
-    await assert.rejects(annotate(spans,'test-key','gpt-5.6-sol'), /校验/);
+    const result = await annotate(spans,'test-key','gpt-5.6-sol');
+    assert.equal(result.annotations[0].anchors.length, 8);
+    assert.equal(result.annotations[0].anchors[4].quote, 'without rest. She felt');
   } finally { globalThis.fetch = original; }
 });

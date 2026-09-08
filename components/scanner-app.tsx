@@ -47,6 +47,7 @@ import { Slider } from '@/components/ui/slider';
 import { api, preparePhoto, imageUrl } from '@/lib/client';
 import type { ScanSession, Spread, Seam } from '@/lib/types';
 import { englishWordCount } from '@/lib/reading-context';
+import { APP_VERSION } from '@/lib/app-version';
 
 export function ScannerApp({
   mode,
@@ -65,6 +66,7 @@ export function ScannerApp({
     [copied, setCopied] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Spread | null>(null);
   const [infoOpen, setInfoOpen] = useState(false);
+  const [syncFailed, setSyncFailed] = useState(false);
   const removedIds = useRef(new Set<string>());
   const detailCache = useRef(new DetailCache(3));
   const [detail, setDetail] = useState<{key:string; value:Spread} | null>(null);
@@ -190,10 +192,11 @@ export function ScannerApp({
         const response = await fetch(`/api/sessions/${sessionId}?summary=1`, {
           headers: etag ? {'If-None-Match':etag} : {}, cache:'no-store', signal:controller.signal,
         });
-        if (response.status === 304) return;
+        if (response.status === 304) { setSyncFailed(false); return; }
         if (!response.ok) throw new Error('无法同步拍摄进度，请检查连接或登录状态。');
         const data = await response.json() as ScanSession;
         if (!alive) return;
+        setSyncFailed(false);
         etag = response.headers.get('etag') || '';
         data.spreads = data.spreads.filter((s) => !removedIds.current.has(s.id));
         processing = data.spreads.some(isProcessing);
@@ -209,8 +212,8 @@ export function ScannerApp({
           highest.current = last.sequence;
           setSelected(last.id);
         }
-      } catch (e) {
-        if (alive) setError((e as Error).message);
+      } catch {
+        if (alive) setSyncFailed(true);
       } finally {
         pending = false;
         if (alive) timer = setTimeout(poll, processing ? 1500 : 4000);
@@ -569,6 +572,12 @@ export function ScannerApp({
             e.target.value = '';
           }}
         />
+        {session?.appVersion && session.appVersion !== APP_VERSION && <div className="reader-failure" role="status">
+          <span>网站已更新。刷新后可使用最新处理状态和批注规则。</span>
+          <Button variant="outline" disabled={busyNow || camera || !!capture} onClick={() => window.location.reload()}>刷新页面</Button>
+        </div>}
+        {syncFailed && <div className="reader-failure" role="status">连接中断，正在重连；显示的进度可能不是最新状态。请勿重复上传。</div>}
+        {!syncFailed && session?.processorHealth === 'offline' && session.spreads.some(isProcessing) && <div className="reader-failure" role="alert">处理后台离线，照片已保存。请确认处理电脑已开机联网，并在“任务计划程序”中启用 BookSpreadScanner-Background。</div>}
         {error && (
           <div role="alert" className="error row">
             <span style={{ flex: 1 }}>{error}</span>
@@ -730,7 +739,7 @@ export function ScannerApp({
                       拍摄 {s.sequence}
                       {(isProcessing(s) || s.status === 'failed') && <small>
                         {isProcessing(s)
-                          ? session.processorHealth === 'offline' ? '后台离线' : s.status === 'queued' ? '排队中' : `处理中 ${s.pipeline?.percent ?? 0}%`
+                          ? syncFailed ? '连接异常' : session.processorHealth === 'offline' ? '后台离线' : s.status === 'queued' ? '排队中' : `处理中 ${s.pipeline?.percent ?? 0}%`
                           : s.status === 'failed'
                             ? '处理失败 · 可重试'
                             : `左 ${s.sequence * 2 - 1} → 右 ${s.sequence * 2}`}
@@ -759,7 +768,7 @@ export function ScannerApp({
               </div>
               {spread && (
                 <section className="review-section">
-                  <PipelineProgress spread={spread} health={session.processorHealth} ahead={session.spreads.filter((s) => s.sequence < spread.sequence && isProcessing(s)).length} />
+                  <PipelineProgress spread={spread} health={syncFailed ? 'unknown' : session.processorHealth} ahead={session.spreads.filter((s) => s.sequence < spread.sequence && isProcessing(s)).length} />
                   {spread.status === 'failed' && <div className="reader-failure" role="alert">
                     <span>{spread.error || '这张照片处理失败。'}</span>
                     <Button variant="outline" disabled={busyNow || detailLoading} onClick={generate}>重试</Button>

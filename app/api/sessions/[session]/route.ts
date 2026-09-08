@@ -1,6 +1,7 @@
 import { db, files, json, conditionalJson, failure, requireSession } from '@/lib/server';
 import { SUMMARY_SQL } from '@/lib/spread-summary';
 import { PRESENCE_KEY, processorHealth, type ProcessorHealth } from '@/lib/processor-health';
+import { APP_VERSION } from '@/lib/app-version';
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ session: string }> },
@@ -30,7 +31,7 @@ export async function GET(
     }
     const data = {
       ...s,
-      ...(summary ? { processorHealth: health } : {}),
+      ...(summary ? { processorHealth: health, appVersion: APP_VERSION } : {}),
       spreads: results.map((r) => ({
         ...JSON.parse(r.data),
         status: r.status,

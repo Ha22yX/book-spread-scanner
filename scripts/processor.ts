@@ -1,9 +1,9 @@
 import Ocr from '@gutenye/ocr-node';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { annotate, ModelError } from '../lib/ai';
-import { paddleLinesToSpans, OCR_ENGINE } from '../lib/paddle-lines';
-import { previousSpreads, type ReadingContext } from '../lib/reading-context';
-import type { Spread, ScanSession, TextSpan } from '../lib/types';
+import { paddleLinesToSpans, OCR_ENGINE, type PaddleLine } from '../lib/paddle-lines';
+import type { ReadingContext } from '../lib/reading-context';
+import type { Spread, TextSpan } from '../lib/types';
 
 // A killed supervisor must not leave an unmanaged OCR process behind.
 process.on('disconnect', () => process.exit(1));
@@ -55,6 +55,13 @@ async function readImage(
   return Buffer.from(await r.arrayBuffer());
 }
 async function processJob(job: Job) {
+  const started = performance.now();
+  const timings: Record<string, number> = {};
+  async function timed<T>(stage: string, work: () => Promise<T>): Promise<T> {
+    const start = performance.now();
+    try { return await work(); }
+    finally { timings[stage] = Math.round(performance.now() - start); }
+  }
   pulse('job-start');
   console.log(`Starting photo ${job.spread.sequence} (session ${job.session.slice(0, 8)}).`);
   const identity = {
@@ -73,31 +80,32 @@ async function processJob(job: Job) {
   try {
     if ((job.spread.pipeline?.attempts ?? 0) > 3)
       throw new Error('后台任务多次中断，请在电脑端点击重试。');
-    let spread = await update('split');
+    const [spread, context, photo] = await Promise.all([
+      timed('split', () => update('split')),
+      timed('context_download', () => update<{spreads: Spread[]}>('context')),
+      timed('original_download', () => readImage(job.session, job.spread, 'original')),
+    ]);
+    const images = await timed('page_downloads', () => Promise.all(
+      (['left', 'right'] as const).map((side) => readImage(job.session, spread, side)),
+    ));
     const spans: TextSpan[] = [];
-    for (const side of ['left', 'right'] as const) {
-      await update('progress', { stage: `ocr_${side}` });
-      const lines = await ocr.detect(
-        await readImage(job.session, spread, side),
-      );
-      spans.push(...paddleLinesToSpans(lines, side, spread[side]));
-    }
+    const leftLines = await timed<PaddleLine[]>('ocr_left', () => ocr.detect(images[0]));
+    spans.push(...paddleLinesToSpans(leftLines, 'left', spread.left));
+    const [, rightLines] = await Promise.all([
+      update('progress', { stage: 'ocr_right' }),
+      timed<PaddleLine[]>('ocr_right', () => ocr.detect(images[1])),
+    ]);
+    spans.push(...paddleLinesToSpans(rightLines, 'right', spread.right));
     if (
       !spans.some((s) => s.side === 'left') ||
       !spans.some((s) => s.side === 'right')
     )
       throw new Error('有一页未识别到可靠文字，请检查照片是否完整、清晰。');
-    spread = await update('progress', { stage: 'context', spans });
-    const sessionResponse = await fetch(`${base}/api/sessions/${job.session}`, {
-      signal: AbortSignal.timeout(15000),
-      headers: siteHeaders,
-    });
-    if (!sessionResponse.ok) throw new Error('无法读取前文。');
-    const data = (await sessionResponse.json()) as ScanSession;
     const history: ReadingContext[] = [];
-    for (const prior of previousSpreads(data.spreads, spread)) {
+    for (const prior of context.spreads) {
       let priorSpans = prior.ocrEngine === OCR_ENGINE ? prior.spans : undefined;
       if (!priorSpans?.length) {
+        await update('progress', { stage: 'context', spans });
         priorSpans = [];
         for (const side of ['left', 'right'] as const) {
           const lines = await ocr.detect(
@@ -115,16 +123,15 @@ async function processJob(job: Job) {
         lines: priorSpans.map((s) => ({ side: s.side, text: s.text })),
       });
     }
-    await update('progress', { stage: 'annotating' });
-    const photo = await readImage(job.session, spread, 'original');
-    const result = await annotate(
+    await timed('save_ocr', () => update('progress', { stage: 'annotating', spans }));
+    const result = await timed('ai', () => annotate(
       spans,
       key!,
       model,
       history,
       `data:image/jpeg;base64,${photo.toString('base64')}`,
-    );
-    await update('complete', {
+    ));
+    await timed('save_result', () => update('complete', {
       ...result,
       model,
       contextSources: history.map(({ spreadId, revision, sequence }) => ({
@@ -132,7 +139,7 @@ async function processJob(job: Job) {
         revision,
         sequence,
       })),
-    });
+    }));
     console.log(`Completed photo ${spread.sequence}`);
   } catch (error) {
     const message =
@@ -143,9 +150,11 @@ async function processJob(job: Job) {
           : '自动处理失败，请在电脑端重试；原图已保留。';
     await update('fail', { error: message }).catch(() => {});
     console.warn('Photo processing failed; original retained.');
+    console.log(`Photo ${job.spread.sequence} failed (${error instanceof Error ? error.name : 'UnknownError'}).`);
   } finally {
     clearInterval(heartbeat);
     pulse('job-end');
+    console.log(`Photo ${job.spread.sequence} timings(ms): ${JSON.stringify({ ...timings, total: Math.round(performance.now() - started) })}`);
   }
 }
 console.log('Background book processor ready.');
