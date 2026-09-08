@@ -4,6 +4,7 @@ export type ReadingSentence = {
   text: string;
   sides: Side[];
   anchors: { span_id: string; quote: string }[];
+  source?: ({ span_id: string; offset: number } | null)[];
 };
 /** Join reading text without losing the source-character map used for highlights. */
 export function buildSentences(input: TextSpan[]): ReadingSentence[] {
@@ -99,6 +100,7 @@ export function buildSentences(input: TextSpan[]): ReadingSentence[] {
             {
               id: '',
               text: sentence,
+              source: refs.slice(start + text.slice(start,end).length - text.slice(start,end).trimStart().length, end - (text.slice(start,end).length - text.slice(start,end).trimEnd().length)).map(r=>r?{span_id:r.span.id,offset:r.offset}:null),
               sides: [...new Set([...ranges.values()].map((r) => r.span.side))],
               anchors,
             },

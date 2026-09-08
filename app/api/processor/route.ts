@@ -25,6 +25,7 @@ import { validAnnotationComment } from '@/lib/annotation-style';
 import type { Spread } from '@/lib/types';
 import { PRESENCE_KEY } from '@/lib/processor-health';
 import { PRIOR_CONTEXT_SQL } from '@/lib/processor-context';
+import { pageNumbersSchema, attachPageNumbers } from '@/lib/page-numbers';
 
 // Only the local background processor knows this token; never expose it to browsers.
 export async function POST(request: Request) {
@@ -57,8 +58,9 @@ export async function POST(request: Request) {
       const value = JSON.parse(candidate.data) as Spread;
       value.status = 'processing';
       value.pipeline = {
-        stage: 'splitting',
-        percent: 15,
+        mode: value.pipeline?.mode ?? 'full',
+        stage: value.pipeline?.mode === 'annotations' ? 'annotating' : 'splitting',
+        percent: value.pipeline?.mode === 'annotations' ? 85 : 15,
         updatedAt: now,
         splitReady: value.pipeline?.splitReady ?? false,
         attempts: (value.pipeline?.attempts ?? 0) + 1,
@@ -172,10 +174,12 @@ export async function POST(request: Request) {
       );
       value.model = z.string().max(100).parse(input.model);
       if (
-        value.annotations.length > 2 ||
+        value.annotations.length > 4 ||
         value.annotations.some((n) => !validAnnotationComment(n.comment))
       )
         throw new ApiError(400, '批注数量、语言或长度校验失败。');
+      value.pageNumbers = pageNumbersSchema.parse(input.pageNumbers);
+      value.annotations = attachPageNumbers(value.annotations,value.pageNumbers);
       value.contextSources = z
         .array(
           z.object({

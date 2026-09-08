@@ -94,7 +94,7 @@ while (Date.now() < deadline) {
 assert.ok(final, 'Background processing timed out.');
 for (const spread of final.spreads) {
   assert.equal(spread.pipeline?.percent, 100);
-  assert.ok(spread.annotations!.length <= 2);
+  assert.ok(spread.annotations!.length >= 2 && spread.annotations!.length <= 4);
   assert.equal(spread.contextSources?.length, spread.sequence - 1);
   for (const note of spread.annotations!) {
     assert.ok(

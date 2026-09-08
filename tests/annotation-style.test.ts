@@ -29,7 +29,7 @@ void test('generation keeps short English intact but never returns an overlong n
   const original = globalThis.fetch;
   let comment = 'Her work becomes her whole world.';
   let calls = 0;
-  globalThis.fetch = async () => { calls++; return Response.json({status:'completed',output:[{content:[{type:'output_text',text:JSON.stringify({annotations:[{type:'结构',comment,sentence_ids:['S1']}]})}]}]}); };
+  globalThis.fetch = async () => { calls++; return Response.json({status:'completed',output:[{content:[{type:'output_text',text:JSON.stringify({page_numbers:{left:'22',right:'23'},annotations:[{type:'结构',comment,evidence:[{sentence_id:'S1',quote:'The shop'}]},{type:'理解',comment:'Her life feels small.',evidence:[{sentence_id:'S1',quote:'her whole world'}]}]})}]}]}); };
   try {
     assert.equal((await annotate([span],'test-key','gpt-5.6-sol')).annotations[0].comment, comment);
     comment = 'The shop now feels like her whole world and only family.';
@@ -46,7 +46,7 @@ void test('one repair recovers an overlong note without truncating the answer', 
   let calls = 0;
   globalThis.fetch = async () => {
     const comment = ++calls === 1 ? 'The shop now feels like her whole world and only family.' : 'Work becomes her whole world.';
-    return Response.json({status:'completed',output:[{content:[{type:'output_text',text:JSON.stringify({annotations:[{type:'结构',comment,sentence_ids:['S1']}]})}]}]});
+    return Response.json({status:'completed',output:[{content:[{type:'output_text',text:JSON.stringify({page_numbers:{left:null,right:null},annotations:[{type:'结构',comment,evidence:[{sentence_id:'S1',quote:'The shop'}]},{type:'理解',comment:'Her life feels small.',evidence:[{sentence_id:'S1',quote:'her whole world'}]}]})}]}]});
   };
   try {
     const result = await annotate([span], 'test-key', 'gpt-5.6-sol');

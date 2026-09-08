@@ -48,6 +48,7 @@ import { api, preparePhoto, imageUrl } from '@/lib/client';
 import type { ScanSession, Spread, Seam } from '@/lib/types';
 import { englishWordCount } from '@/lib/reading-context';
 import { APP_VERSION } from '@/lib/app-version';
+import { pageLabel } from '@/lib/page-numbers';
 
 export function ScannerApp({
   mode,
@@ -343,6 +344,7 @@ export function ScannerApp({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             revision: spread.revision,
+            mode: spread.spans?.length ? 'annotations' : 'full',
           }),
         },
       );
@@ -505,7 +507,7 @@ export function ScannerApp({
                 <DropdownMenuItem disabled={busyNow} onClick={() => setTab('pages')}><BookOpen /> 查看批注</DropdownMenuItem>
                 <DropdownMenuItem disabled={busyNow || detailLoading} onClick={() => setTab('text')}><FileText /> 查看识别原文</DropdownMenuItem>
                 <DropdownMenuItem disabled={busyNow || (!!spread.pipeline && !spread.pipeline.splitReady)} onClick={() => setTab('split')}><Scissors /> 调整左右分割</DropdownMenuItem>
-                <DropdownMenuItem disabled={busyNow || isProcessing(spread) || detailLoading} onClick={generate}><Sparkles /> 重新识别与批注</DropdownMenuItem>
+                <DropdownMenuItem disabled={busyNow || isProcessing(spread) || detailLoading} onClick={generate}><Sparkles /> {spread.spans?.length ? '只重新生成批注' : '识别并生成批注'}</DropdownMenuItem>
                 <DropdownMenuItem disabled={detailLoading} onClick={() => setInfoOpen(true)}><Info /> 处理信息</DropdownMenuItem>
               </>}
               <DropdownMenuSeparator />
@@ -736,13 +738,13 @@ export function ScannerApp({
                   >
                     <LazyThumbnail session={sessionId} id={s.id} />
                     <span>
-                      拍摄 {s.sequence}
+                      {pageLabel(s)}
                       {(isProcessing(s) || s.status === 'failed') && <small>
                         {isProcessing(s)
                           ? syncFailed ? '连接异常' : session.processorHealth === 'offline' ? '后台离线' : s.status === 'queued' ? '排队中' : `处理中 ${s.pipeline?.percent ?? 0}%`
                           : s.status === 'failed'
                             ? '处理失败 · 可重试'
-                            : `左 ${s.sequence * 2 - 1} → 右 ${s.sequence * 2}`}
+                            : '等待识别印刷页码'}
                       </small>}
                     </span>
                     {s.status === 'annotated' && <Check size={15} />}

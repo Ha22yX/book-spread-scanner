@@ -80,15 +80,18 @@ async function processJob(job: Job) {
   try {
     if ((job.spread.pipeline?.attempts ?? 0) > 3)
       throw new Error('后台任务多次中断，请在电脑端点击重试。');
+    const annotationOnly = job.spread.pipeline?.mode === 'annotations';
+    if(annotationOnly && !job.spread.spans?.length) throw new Error('缺少已有 OCR，已停止仅批注任务。');
     const [spread, context, photo] = await Promise.all([
-      timed('split', () => update('split')),
+      annotationOnly ? Promise.resolve(job.spread) : timed('split', () => update('split')),
       timed('context_download', () => update<{spreads: Spread[]}>('context')),
       timed('original_download', () => readImage(job.session, job.spread, 'original')),
     ]);
+    const spans: TextSpan[] = annotationOnly ? job.spread.spans! : [];
+    if(!annotationOnly) {
     const images = await timed('page_downloads', () => Promise.all(
       (['left', 'right'] as const).map((side) => readImage(job.session, spread, side)),
     ));
-    const spans: TextSpan[] = [];
     const leftLines = await timed<PaddleLine[]>('ocr_left', () => ocr.detect(images[0]));
     spans.push(...paddleLinesToSpans(leftLines, 'left', spread.left));
     const [, rightLines] = await Promise.all([
@@ -96,6 +99,7 @@ async function processJob(job: Job) {
       timed<PaddleLine[]>('ocr_right', () => ocr.detect(images[1])),
     ]);
     spans.push(...paddleLinesToSpans(rightLines, 'right', spread.right));
+    }
     if (
       !spans.some((s) => s.side === 'left') ||
       !spans.some((s) => s.side === 'right')
@@ -103,8 +107,9 @@ async function processJob(job: Job) {
       throw new Error('有一页未识别到可靠文字，请检查照片是否完整、清晰。');
     const history: ReadingContext[] = [];
     for (const prior of context.spreads) {
-      let priorSpans = prior.ocrEngine === OCR_ENGINE ? prior.spans : undefined;
+      let priorSpans = annotationOnly || prior.ocrEngine === OCR_ENGINE ? prior.spans : undefined;
       if (!priorSpans?.length) {
+        if(annotationOnly) throw new Error('前文缺少已有 OCR，已停止；不会重新识别。');
         await update('progress', { stage: 'context', spans });
         priorSpans = [];
         for (const side of ['left', 'right'] as const) {
@@ -123,7 +128,7 @@ async function processJob(job: Job) {
         lines: priorSpans.map((s) => ({ side: s.side, text: s.text })),
       });
     }
-    await timed('save_ocr', () => update('progress', { stage: 'annotating', spans }));
+    if(!annotationOnly) await timed('save_ocr', () => update('progress', { stage: 'annotating', spans }));
     const result = await timed('ai', () => annotate(
       spans,
       key!,

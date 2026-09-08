@@ -8,6 +8,7 @@ export type Seam = {
   method: 'gutter' | 'center' | 'manual' | 'vision';
 };
 export type Dimensions = { width: number; height: number };
+export type PageNumbers = { left: string | null; right: string | null };
 export type TextSpan = {
   id: string;
   side: Side;
@@ -21,9 +22,14 @@ export type Annotation = {
   id: string;
   comment: string;
   type: string;
+  pages?: string[];
   anchors: {
     span_id: string;
     quote: string;
+    start?: number;
+    end?: number;
+    pageNumber?: string | null;
+    geometry?: 'estimated' | 'ocr';
     side: Side;
     boxes: Box[];
     polygon?: Polygon;
@@ -49,6 +55,7 @@ export type Spread = {
     | 'annotated'
     | 'failed';
   pipeline?: {
+    mode?: 'full' | 'annotations';
     stage:
       | 'queued'
       | 'splitting'
@@ -67,6 +74,7 @@ export type Spread = {
   spans?: TextSpan[];
   annotations?: Annotation[];
   model?: string;
+  pageNumbers?: PageNumbers;
   promptVersion?: string;
   annotationWarning?: string;
   contextSources?: { spreadId: string; revision: number; sequence: number }[];

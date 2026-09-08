@@ -1,1 +1,1 @@
-export const APP_VERSION = '2026-09-08-pipeline-v2';
+export const APP_VERSION = '2026-09-08-multinotes-v3';

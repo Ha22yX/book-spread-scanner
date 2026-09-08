@@ -1,5 +1,6 @@
-import type { TextSpan, Annotation, Box, Dimensions } from './types';
+import type { TextSpan, Annotation, Dimensions } from './types';
 import { z } from 'zod';
+import { quoteGeometry } from './highlight-geometry';
 const boxSchema = z.object({
   x0: z.number().nonnegative(),
   y0: z.number().nonnegative(),
@@ -86,6 +87,8 @@ export const aiSchema = z.object({
             z.object({
               span_id: z.string(),
               quote: z.string().min(1).max(1500),
+              start: z.number().int().nonnegative().optional(),
+              end: z.number().int().positive().optional(),
             }),
           )
           .min(1)
@@ -106,29 +109,11 @@ export function resolveAnnotations(
     anchors: note.anchors.map((a) => {
       const span = index.get(a.span_id);
       if (!span) throw new Error('AI 引用了不存在的文字。');
-      const start = span.text.indexOf(a.quote);
-      if (start < 0 || span.text.indexOf(a.quote, start + 1) >= 0)
+      const start = a.start ?? span.text.indexOf(a.quote);
+      const end = a.end ?? start + a.quote.length;
+      if (start < 0 || end <= start || end > span.text.length || span.text.slice(start,end) !== a.quote || (a.start === undefined && span.text.indexOf(a.quote, start + 1) >= 0))
         throw new Error('AI 引用无法唯一定位。');
-      const words = span.words.filter(
-        (w) => w.end > start && w.start < start + a.quote.length,
-      );
-      if (!words.length) throw new Error('AI 引用没有对应坐标。');
-      const boxes: Box[] = [];
-      for (const word of words) {
-        const last = boxes.at(-1),
-          b = word.box;
-        if (
-          last &&
-          Math.abs(last.y0 - b.y0) < Math.max(4, (last.y1 - last.y0) * 0.45) &&
-          b.x0 - last.x1 < Math.max(12, b.y1 - b.y0)
-        ) {
-          last.x0 = Math.min(last.x0, b.x0);
-          last.x1 = Math.max(last.x1, b.x1);
-          last.y0 = Math.min(last.y0, b.y0);
-          last.y1 = Math.max(last.y1, b.y1);
-        } else boxes.push({ ...b });
-      }
-      return { ...a, side: span.side, boxes, polygon: span.polygon };
+      return { ...a, start, end, side: span.side, ...quoteGeometry(span,start,end) };
     }),
   }));
 }

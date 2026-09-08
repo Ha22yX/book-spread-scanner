@@ -3,17 +3,20 @@ import assert from 'node:assert/strict';
 import { annotate } from '../lib/ai';
 import type { TextSpan } from '../lib/types';
 import { buildSentences } from '../lib/sentences';
+import { selectedAnchors } from '../lib/selected-anchors';
 void test('Responses request combines current photo, previous original text and selectable current sentences', async () => {
   const original=globalThis.fetch;
   const span:TextSpan={id:'L1',side:'left',text:'The shop was her whole world.',confidence:98,words:[{text:'The shop was her whole world.',start:0,end:28,box:{x0:10,y0:10,x1:290,y1:30}}]};
   let captured:Record<string,unknown>={};
   globalThis.fetch=async (_url,init)=>{
     captured=JSON.parse(init?.body as string) as Record<string,unknown>;
-    return Response.json({status:'completed',output:[{content:[{type:'output_text',text:JSON.stringify({annotations:[{type:'结构',comment:'The shop shapes her whole life.',sentence_ids:['S1']}]})}]}]});
+    return Response.json({status:'completed',output:[{content:[{type:'output_text',text:JSON.stringify({page_numbers:{left:'22',right:'23'},annotations:[{type:'结构',comment:'The shop shapes her whole life.',evidence:[{sentence_id:'S1',quote:'The shop'}]},{type:'理解',comment:'Her life feels small.',evidence:[{sentence_id:'S1',quote:'her whole world'}]}]})}]}]});
   };
   try {
     const result=await annotate([span],'test-key','gpt-5.6-sol',[{spreadId:'previous',sequence:1,revision:1,lines:[{side:'left',text:'Earlier she worked all day.'}]}],'data:image/jpeg;base64,test');
-    assert.equal(result.annotations.length,1);
+    assert.equal(result.annotations.length,2);
+    assert.deepEqual(result.pageNumbers,{left:'22',right:'23'});
+    assert.deepEqual(result.annotations[0].pages,['22']);
     assert.equal(result.annotations[0].anchors[0].span_id,'L1');
     assert.equal(captured.store,false);
     const body=JSON.stringify(captured);
@@ -29,11 +32,7 @@ void test('overlapping sentences merge their shared OCR line into eight valid an
   const sentences = buildSentences(spans);
   assert.equal(sentences.length, 2);
   assert.equal(sentences.flatMap((s) => s.anchors).length, 9);
-  const original = globalThis.fetch;
-  globalThis.fetch = async () => Response.json({status:'completed',output:[{content:[{type:'output_text',text:JSON.stringify({annotations:[{type:'结构',comment:'The shop shapes her whole life.',sentence_ids:sentences.map((s) => s.id)}]})}]}]});
-  try {
-    const result = await annotate(spans,'test-key','gpt-5.6-sol');
-    assert.equal(result.annotations[0].anchors.length, 8);
-    assert.equal(result.annotations[0].anchors[4].quote, 'without rest. She felt');
-  } finally { globalThis.fetch = original; }
+  const anchors=selectedAnchors(sentences.map(s=>s.id),sentences,spans);
+  assert.equal(anchors.length,8);
+  assert.equal(anchors[4].quote,'without rest. She felt');
 });

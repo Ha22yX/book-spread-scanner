@@ -118,7 +118,7 @@ export async function POST(
     const photoDataUrl =
       'data:image/jpeg;base64,' +
       Buffer.from(await photo.arrayBuffer()).toString('base64');
-    const { annotations, omitted } = await annotate(
+    const { annotations, omitted, pageNumbers } = await annotate(
       spans,
       env.OPENAI_API_KEY,
       model,
@@ -136,6 +136,7 @@ export async function POST(
         sequence,
       })),
       annotations,
+      pageNumbers,
       annotationWarning: omitted
         ? `${omitted} 条批注未通过定位或长度校验，已隐藏。可重新生成。`
         : undefined,

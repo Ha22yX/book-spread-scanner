@@ -23,14 +23,16 @@ export const isProcessing = (spread: Spread) =>
   spread.status === 'queued' ||
   spread.status === 'processing' ||
   spread.status === 'annotating';
-export function queueSpread(spread: Spread): Spread {
+export function queueSpread(spread: Spread, mode: 'full' | 'annotations' = 'full'): Spread {
+  if(mode === 'annotations' && !spread.spans?.length) throw new Error('缺少已有 OCR，不能只重做批注。');
   return {
     ...spread,
     status: 'queued',
-    annotations: [],
+    annotations: mode === 'annotations' ? spread.annotations : [],
     error: undefined,
     annotationWarning: undefined,
     pipeline: {
+      mode,
       stage: 'queued',
       percent: 5,
       updatedAt: Date.now(),

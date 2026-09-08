@@ -1,10 +1,12 @@
 'use client';
 /* oxlint-disable nextjs/no-img-element -- Authentic scanned pixels are required for coordinate overlays. */
 /* oxlint-disable jsx-a11y/prefer-tag-over-role -- Interactive SVG highlights use keyboard button semantics. */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Download } from 'lucide-react';
 import { imageUrl } from '@/lib/client';
 import type { Spread } from '@/lib/types';
+import { quoteGeometry } from '@/lib/highlight-geometry';
+import { noteStyle } from '@/lib/note-colors';
 type Placement = {
   id: string;
   side: 'left' | 'right';
@@ -26,11 +28,18 @@ export function MarginalBook({
   onNote: (id: string) => void;
 }) {
   const root = useRef<HTMLDivElement>(null);
+  const annotations = useMemo(() => (spread.annotations ?? []).map(n=>({...n,anchors:n.anchors.map(a=>{
+    const span=spread.spans?.find(s=>s.id===a.span_id);
+    const start=a.start ?? span?.text.indexOf(a.quote) ?? -1;
+    if(!span || start<0 || (a.start===undefined && span.text.indexOf(a.quote,start+1)>=0))return a;
+    return {...a,...quoteGeometry(span,start,a.end ?? start+a.quote.length)};
+  })})),[spread]);
   const [layout, setLayout] = useState<{
     width: number;
     height: number;
     notes: Placement[];
-  }>({ width: 1, height: 1, notes: [] });
+    railHeight: number;
+  }>({ width: 1, height: 1, notes: [], railHeight:470 });
   useEffect(() => {
     const desk = root.current;
     if (!desk) return;
@@ -41,7 +50,13 @@ export function MarginalBook({
         const bounds = desk.getBoundingClientRect();
         const notes: Placement[] = [];
         const occupied = { left: 45, right: 45 };
-        for (const note of spread.annotations ?? []) {
+        const remaining = {left:0,right:0};
+        for(const note of annotations){
+          const card=desk.querySelector<HTMLElement>(`[data-card="${CSS.escape(note.id)}"]`);
+          remaining[note.anchors[0]?.side ?? 'right']+=(card?.getBoundingClientRect().height ?? 0)+24;
+        }
+        const railHeight=Math.max(470,remaining.left+90,remaining.right+90);
+        for (const note of annotations) {
           const side = note.anchors[0]?.side ?? 'right';
           const marks = [
             ...desk.querySelectorAll<SVGGraphicsElement>(
@@ -62,9 +77,10 @@ export function MarginalBook({
           const y = mark.top - bounds.top + mark.height / 2;
           const top = Math.max(
             occupied[side],
-            Math.min(bounds.height - height - 24, y - height / 2),
+            Math.min(Math.max(bounds.height,railHeight) - remaining[side] - 24, y - height / 2),
           );
           occupied[side] = top + height + 24;
+          remaining[side] -= height + 24;
           notes.push({
             id: note.id,
             side,
@@ -75,7 +91,7 @@ export function MarginalBook({
             endY: top + height / 2,
           });
         }
-        setLayout({ width: bounds.width, height: bounds.height, notes });
+        setLayout({ width: bounds.width, height: bounds.height, notes, railHeight });
       });
     };
     const observer = new ResizeObserver(measure);
@@ -88,15 +104,15 @@ export function MarginalBook({
       cancelAnimationFrame(frame);
       observer.disconnect();
     };
-  }, [spread]);
+  }, [annotations]);
   return (
     <div className="marginal-scroll" aria-label="带页边批注的双页书本">
-      <div className="marginal-desk" ref={root}>
+      <div className="marginal-desk" ref={root} style={{minHeight:layout.railHeight}}>
         <div className="marginal-pages">
           {(['left', 'right'] as const).map((side) => (
             <article className="book-page" key={side}>
               <div className="page-caption">
-                <span>{side === 'left' ? '左页' : '右页'}</span>
+                <span>{side === 'left' ? '左页' : '右页'}{spread.pageNumbers && ` · P${spread.pageNumbers[side] ?? '?'}`}</span>
                 <a
                   href={imageUrl(session, spread, side)}
                   download
@@ -113,9 +129,9 @@ export function MarginalBook({
                 <svg
                   className="highlight-overlay"
                   viewBox={`0 0 ${spread[side].width} ${spread[side].height}`}
-                  aria-label="整句高亮"
+                  aria-label="批注引用短语高亮"
                 >
-                  {spread.annotations?.flatMap((note) =>
+                  {annotations.flatMap((note, ni) =>
                     note.anchors
                       .filter((a) => a.side === side)
                       .flatMap((a, ai) =>
@@ -136,6 +152,7 @@ export function MarginalBook({
                               .map((p) => `${p.x},${p.y}`)
                               .join(' ')}
                             className={`highlight ${activeNote === note.id ? 'selected' : ''}`}
+                            style={noteStyle(ni)}
                             onClick={() => onNote(note.id)}
                             role="button"
                             tabIndex={0}
@@ -147,7 +164,7 @@ export function MarginalBook({
                               }
                             }}
                           >
-                            <title>{a.quote}</title>
+                            <title>{a.quote}{a.geometry==='estimated' ? '（根据原有行坐标估算词句边界）' : ''}</title>
                           </polygon>
                         )),
                       ),
@@ -166,6 +183,7 @@ export function MarginalBook({
             <g
               key={n.id}
               className={activeNote === n.id ? 'leader-active' : ''}
+              style={noteStyle(annotations.findIndex(a=>a.id===n.id))}
             >
               <path
                 d={`M ${n.x} ${n.y} L ${n.side === 'left' ? n.endX + 14 : n.endX - 14} ${n.y} L ${n.endX} ${n.endY}`}
@@ -174,7 +192,7 @@ export function MarginalBook({
             </g>
           ))}
         </svg>
-        {spread.annotations?.map((note, i) => {
+        {annotations.map((note, i) => {
           const place = layout.notes.find((n) => n.id === note.id);
           const side = note.anchors[0]?.side ?? 'right';
           return (
@@ -183,13 +201,13 @@ export function MarginalBook({
               data-card={note.id}
               key={note.id}
               className={`margin-note margin-${side} ${activeNote === note.id ? 'active' : ''}`}
-              style={{ top: place?.top ?? 80 + i * 130 }}
+              style={{ ...noteStyle(i), top: place?.top ?? 80 + i * 130 }}
               onClick={() => onNote(note.id)}
               onFocus={() => onNote(note.id)}
               aria-label={`批注 ${i + 1}：${note.comment}`}
             >
-              {spread.annotations!.length > 1 && <span className="margin-note-number">
-                {String(i + 1).padStart(2, '0')}
+              {annotations.length > 1 && <span className="margin-note-number">
+                {String(i + 1).padStart(2, '0')}{note.pages?.length ? ` · ${note.pages.map(p=>`P${p}`).join(' / ')}` : ''}
               </span>}
               <span className="margin-note-text" lang="en">
                 {note.comment}
