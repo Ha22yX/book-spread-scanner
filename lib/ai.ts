@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { resolveAnnotations } from './anchors';
+import { aiSchema, resolveAnnotations } from './anchors';
 import type { TextSpan, Annotation } from './types';
 import { ANNOTATION_PROMPT } from './prompts';
 import {
@@ -146,7 +146,7 @@ export async function annotate(
       if (new Set(anchors.map((a) => a.span_id)).size > 8)
         throw new Error('Highlight too broad');
       const resolved = resolveAnnotations(
-        { annotations: [{ comment: note.comment, type: note.type, anchors }] },
+        aiSchema.parse({ annotations: [{ comment: note.comment, type: note.type, anchors }] }),
         spans,
       )[0];
       annotations.push({ ...resolved, id: `note-${annotations.length + 1}` });

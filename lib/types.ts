@@ -72,4 +72,4 @@ export type Spread = {
   contextSources?: { spreadId: string; revision: number; sequence: number }[];
   ocrEngine?: string;
 };
-export type ScanSession = { id: string; created_at: number; spreads: Spread[] };
+export type ScanSession = { id: string; created_at: number; spreads: Spread[]; processorHealth?: import('./processor-health').ProcessorHealth };

@@ -23,6 +23,7 @@ import { stagePercent } from '@/lib/pipeline';
 import { ANNOTATION_PROMPT_VERSION } from '@/lib/prompts';
 import { englishWordCount } from '@/lib/reading-context';
 import type { Spread } from '@/lib/types';
+import { PRESENCE_KEY } from '@/lib/processor-health';
 
 // Only the local background processor knows this token; never expose it to browsers.
 export async function POST(request: Request) {
@@ -33,6 +34,10 @@ export async function POST(request: Request) {
     )
       throw new ApiError(403, '无权访问后台任务。');
     const input = await readJson(request, 2_000_000);
+    if (input.action === 'presence') {
+      await files().put(PRESENCE_KEY, '{}', { httpMetadata: { contentType: 'application/json' } });
+      return json({ ok: true });
+    }
     if (input.action === 'claim') {
       const now = Date.now();
       const candidate = await db()
@@ -211,6 +216,10 @@ export async function POST(request: Request) {
     }
     throw new ApiError(400, '无效任务操作。');
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      console.error('Processor validation failed', error.issues.map((issue) => ({ path: issue.path.join('.'), code: issue.code })));
+      return json({ error: '后台提交的数据未通过校验，原图已保留，请重试。' }, 400);
+    }
     return failure(error);
   }
 }

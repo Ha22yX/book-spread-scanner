@@ -20,3 +20,15 @@ void test('finished captures no longer occupy space with a completed progress ca
   const html = renderToStaticMarkup(createElement(PipelineProgress,{spread:{...spread,status:'annotated',pipeline:{...spread.pipeline!,stage:'complete',percent:100}}}));
   assert.equal(html,'');
 });
+void test('offline processor explains pause and never claims to be processing at five percent', () => {
+  const html = renderToStaticMarkup(createElement(PipelineProgress,{spread:{...spread,status:'queued'},health:'offline'}));
+  assert.ok(html.includes('后台离线，照片已保存'));
+  assert.ok(html.includes('无需重新上传'));
+  assert.ok(html.includes('已暂停'));
+  assert.ok(!html.includes('<span>35%</span>'));
+});
+void test('online queue shows previous captures without pretending OCR has started', () => {
+  const html = renderToStaticMarkup(createElement(PipelineProgress,{spread:{...spread,status:'queued'},health:'online',ahead:3}));
+  assert.ok(html.includes('前面还有 3 张'));
+  assert.ok(html.includes('等待中'));
+});

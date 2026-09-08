@@ -5,6 +5,9 @@ import { paddleLinesToSpans, OCR_ENGINE } from '../lib/paddle-lines';
 import { previousSpreads, type ReadingContext } from '../lib/reading-context';
 import type { Spread, ScanSession, TextSpan } from '../lib/types';
 
+// A killed supervisor must not leave an unmanaged OCR process behind.
+process.on('disconnect', () => process.exit(1));
+
 process.loadEnvFile('.dev.vars');
 const token = process.env.PROCESSOR_TOKEN;
 const key = process.env.OPENAI_API_KEY;
@@ -18,6 +21,8 @@ const siteHeaders: Record<string, string> =
     ? { 'OAI-Sites-Authorization': `Bearer ${process.env.SITE_ACCESS_TOKEN}` }
     : {};
 const ocr = await Ocr.create({ onnxOptions: { intraOpNumThreads: 2 } });
+const pulse = (type: string) => { if (process.connected) process.send?.({ type }); };
+setInterval(() => pulse('alive'), 15000).unref();
 type Job = { session: string; spread: Spread; lease: number };
 async function call<T>(input: unknown): Promise<T> {
   const r = await fetch(`${base}/api/processor`, {
@@ -31,7 +36,10 @@ async function call<T>(input: unknown): Promise<T> {
     signal: AbortSignal.timeout(90000),
   });
   const result = (await r.json()) as T & { error?: string };
-  if (!r.ok) throw new Error(result.error || `后台连接失败 (${r.status})`);
+  if (!r.ok) {
+    console.log(`Cloud processor API returned HTTP ${r.status}.`);
+    throw new Error(result.error || `后台连接失败 (${r.status})`);
+  }
   return result;
 }
 async function readImage(
@@ -47,6 +55,8 @@ async function readImage(
   return Buffer.from(await r.arrayBuffer());
 }
 async function processJob(job: Job) {
+  pulse('job-start');
+  console.log(`Starting photo ${job.spread.sequence} (session ${job.session.slice(0, 8)}).`);
   const identity = {
     session: job.session,
     id: job.spread.id,
@@ -135,9 +145,21 @@ async function processJob(job: Job) {
     console.warn('Photo processing failed; original retained.');
   } finally {
     clearInterval(heartbeat);
+    pulse('job-end');
   }
 }
 console.log('Background book processor ready.');
+// Independent liveness, including while idle or waiting for an AI response.
+let presencePending = false;
+async function presence() {
+  if (presencePending) return;
+  presencePending = true;
+  try { await call({ action: 'presence' }); }
+  catch { /* The claim loop reports connectivity; do not stop processing. */ }
+  finally { presencePending = false; }
+}
+void presence();
+setInterval(() => void presence(), 30000).unref();
 let warned = false;
 while (true) {
   try {
@@ -149,7 +171,7 @@ while (true) {
     }
   } catch {
     if (!warned) {
-      console.warn('Waiting for local web service.');
+      console.log('Cloud connection unavailable; retrying automatically.');
       warned = true;
     }
   }

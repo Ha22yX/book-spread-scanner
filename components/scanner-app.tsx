@@ -730,7 +730,7 @@ export function ScannerApp({
                       拍摄 {s.sequence}
                       {(isProcessing(s) || s.status === 'failed') && <small>
                         {isProcessing(s)
-                          ? `处理中 ${s.pipeline?.percent ?? 0}%`
+                          ? session.processorHealth === 'offline' ? '后台离线' : s.status === 'queued' ? '排队中' : `处理中 ${s.pipeline?.percent ?? 0}%`
                           : s.status === 'failed'
                             ? '处理失败 · 可重试'
                             : `左 ${s.sequence * 2 - 1} → 右 ${s.sequence * 2}`}
@@ -759,7 +759,7 @@ export function ScannerApp({
               </div>
               {spread && (
                 <section className="review-section">
-                  <PipelineProgress spread={spread} />
+                  <PipelineProgress spread={spread} health={session.processorHealth} ahead={session.spreads.filter((s) => s.sequence < spread.sequence && isProcessing(s)).length} />
                   {spread.status === 'failed' && <div className="reader-failure" role="alert">
                     <span>{spread.error || '这张照片处理失败。'}</span>
                     <Button variant="outline" disabled={busyNow || detailLoading} onClick={generate}>重试</Button>

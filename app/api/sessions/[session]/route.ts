@@ -1,5 +1,6 @@
-import { db, json, conditionalJson, failure, requireSession } from '@/lib/server';
+import { db, files, json, conditionalJson, failure, requireSession } from '@/lib/server';
 import { SUMMARY_SQL } from '@/lib/spread-summary';
+import { PRESENCE_KEY, processorHealth, type ProcessorHealth } from '@/lib/processor-health';
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ session: string }> },
@@ -20,8 +21,16 @@ export async function GET(
       )
       .bind(session)
       .all<{ data: string; status: string; revision: number; contentBytes?: number }>();
+    let health: ProcessorHealth = 'unknown';
+    if (summary) {
+      try {
+        const presence = await files().head(PRESENCE_KEY);
+        health = processorHealth(presence?.uploaded.getTime() ?? null);
+      } catch { /* A health check failure must not hide the user's photos. */ }
+    }
     const data = {
       ...s,
+      ...(summary ? { processorHealth: health } : {}),
       spreads: results.map((r) => ({
         ...JSON.parse(r.data),
         status: r.status,
