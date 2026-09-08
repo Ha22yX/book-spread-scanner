@@ -100,10 +100,10 @@ async function processJob(job: Job) {
     ]);
     spans.push(...paddleLinesToSpans(rightLines, 'right', spread.right));
     }
-    if (
+    if (!annotationOnly && (
       !spans.some((s) => s.side === 'left') ||
       !spans.some((s) => s.side === 'right')
-    )
+    ))
       throw new Error('有一页未识别到可靠文字，请检查照片是否完整、清晰。');
     const history: ReadingContext[] = [];
     for (const prior of context.spreads) {

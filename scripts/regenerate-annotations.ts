@@ -32,7 +32,7 @@ else {
   assert.ok(snapshot.spreads.every(s=>s.spans?.length),'A photo lacks OCR; stopped without recomputing it.');
   writeFileSync(backup,JSON.stringify(snapshot),{flag:'wx'});
 }
-const checkpoint=`outputs/annotations-v8-${session}.json`;
+const checkpoint=`outputs/annotations-${ANNOTATION_PROMPT_VERSION.split('-').at(-1)}-${session}.json`;
 const results: {sequence:number;id:string;label:string;notes:number;unknownPage:boolean}[]=existsSync(checkpoint)?JSON.parse(readFileSync(checkpoint,'utf8')):[];
 const ordered=[...snapshot.spreads].sort((a,b)=>a.sequence-b.sequence);
 console.log(`Regenerating annotations only: ${ordered.length} existing photos, starting at capture ${ordered[0].sequence}. Original notes backed up.`);

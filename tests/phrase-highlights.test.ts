@@ -54,6 +54,7 @@ void test('annotation-only queue preserves notes, text, geometry and image revis
   const old={id:'s',status:'annotated',revision:7,spans:[line('She hid the key.')],annotations:[{id:'old'}],left:{width:420,height:800},seam:{top:0.4,bottom:0.5},pageNumbers:{left:'22',right:'23'}} as Spread;
   const next=queueSpread(old,'annotations');
   assert.equal(next.pipeline?.mode,'annotations');
+  assert.ok(next.spans?.every(s=>s.side==='left'),'Single-sided historical OCR can still be reused.');
   for(const field of ['spans','annotations','seam','left','pageNumbers','revision'] as const)assert.equal(next[field],old[field]);
   assert.throws(()=>queueSpread({...old,spans:undefined},'annotations'));
 });
