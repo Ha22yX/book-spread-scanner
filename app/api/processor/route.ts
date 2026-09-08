@@ -21,7 +21,7 @@ import {
 import { OCR_ENGINE } from '@/lib/paddle-lines';
 import { stagePercent } from '@/lib/pipeline';
 import { ANNOTATION_PROMPT_VERSION } from '@/lib/prompts';
-import { englishWordCount } from '@/lib/reading-context';
+import { validAnnotationComment } from '@/lib/annotation-style';
 import type { Spread } from '@/lib/types';
 import { PRESENCE_KEY } from '@/lib/processor-health';
 
@@ -163,12 +163,7 @@ export async function POST(request: Request) {
       value.model = z.string().max(100).parse(input.model);
       if (
         value.annotations.length > 2 ||
-        value.annotations.some(
-          (n) =>
-            englishWordCount(n.comment) < 10 ||
-            englishWordCount(n.comment) > 25 ||
-            /\p{Script=Han}/u.test(n.comment),
-        )
+        value.annotations.some((n) => !validAnnotationComment(n.comment))
       )
         throw new ApiError(400, '批注数量、语言或长度校验失败。');
       value.contextSources = z

@@ -9,7 +9,7 @@ void test('Responses request combines current photo, previous original text and 
   let captured:Record<string,unknown>={};
   globalThis.fetch=async (_url,init)=>{
     captured=JSON.parse(init?.body as string) as Record<string,unknown>;
-    return Response.json({status:'completed',output:[{content:[{type:'output_text',text:JSON.stringify({annotations:[{type:'结构',comment:'This metaphor shows how much the shop controls her daily life.',sentence_ids:['S1']}]})}]}]});
+    return Response.json({status:'completed',output:[{content:[{type:'output_text',text:JSON.stringify({annotations:[{type:'结构',comment:'The shop shapes her whole life.',sentence_ids:['S1']}]})}]}]});
   };
   try {
     const result=await annotate([span],'test-key','gpt-5.6-sol',[{spreadId:'previous',sequence:1,revision:1,lines:[{side:'left',text:'Earlier she worked all day.'}]}],'data:image/jpeg;base64,test');
@@ -30,7 +30,7 @@ void test('overlapping sentences cannot send nine anchors through an eight-ancho
   assert.equal(sentences.length, 2);
   assert.equal(sentences.flatMap((s) => s.anchors).length, 9);
   const original = globalThis.fetch;
-  globalThis.fetch = async () => Response.json({status:'completed',output:[{content:[{type:'output_text',text:JSON.stringify({annotations:[{type:'结构',comment:'This metaphor shows how much the shop controls her daily life.',sentence_ids:sentences.map((s) => s.id)}]})}]}]});
+  globalThis.fetch = async () => Response.json({status:'completed',output:[{content:[{type:'output_text',text:JSON.stringify({annotations:[{type:'结构',comment:'The shop shapes her whole life.',sentence_ids:sentences.map((s) => s.id)}]})}]}]});
   try {
     await assert.rejects(annotate(spans,'test-key','gpt-5.6-sol'), /校验/);
   } finally { globalThis.fetch = original; }

@@ -5,7 +5,9 @@ void test('student marginal prompt preserves style, reading order and exact OCR 
   assert.match(ANNOTATION_PROMPT_VERSION, /^simple-english-photo-history-v/);
   for (const constraint of [
     'ENTIRE current two-page photo',
-    '10–15 English words',
+    'at most 10 English words',
+    'NO longer-note exception',
+    'never pad a note',
     'previous_photos',
     'sentence_ids',
     'untrusted DATA',

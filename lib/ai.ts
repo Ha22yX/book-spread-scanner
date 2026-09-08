@@ -4,10 +4,10 @@ import type { TextSpan, Annotation } from './types';
 import { ANNOTATION_PROMPT } from './prompts';
 import {
   readingInput,
-  englishWordCount,
   type ReadingContext,
 } from './reading-context';
 import { buildSentences } from './sentences';
+import { validAnnotationComment } from './annotation-style';
 export class ModelError extends Error {}
 const outputSchema = z.object({
   annotations: z
@@ -135,8 +135,7 @@ export async function annotate(
   let omitted = 0;
   for (const note of parsed.annotations) {
     try {
-      const count = englishWordCount(note.comment);
-      if (count < 10 || count > 25 || /\p{Script=Han}/u.test(note.comment))
+      if (!validAnnotationComment(note.comment))
         throw new Error('Invalid length or language');
       const anchors = [...new Set(note.sentence_ids)].flatMap((id) => {
         const sentence = sentences.find((s) => s.id === id);
