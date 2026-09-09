@@ -164,7 +164,7 @@ export function MarginalBook({
                               }
                             }}
                           >
-                            <title>{a.quote}{a.geometry==='estimated' ? '（根据原有行坐标估算词句边界）' : ''}</title>
+                            <title>{`${a.quote}${a.geometry==='estimated' ? '（根据原有行坐标估算词句边界）' : ''}`}</title>
                           </polygon>
                         )),
                       ),
@@ -179,7 +179,7 @@ export function MarginalBook({
           viewBox={`0 0 ${layout.width} ${layout.height}`}
           aria-hidden="true"
         >
-          {layout.notes.map((n) => (
+          {layout.notes.filter(n=>annotations.some(a=>a.id===n.id)).map((n) => (
             <g
               key={n.id}
               className={activeNote === n.id ? 'leader-active' : ''}

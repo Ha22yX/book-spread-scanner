@@ -6,6 +6,6 @@ export const NOTE_COLORS = [
   {ink:'#347d50',fill:'#7fcf98',paper:'#eafaef'},
 ] as const;
 export function noteStyle(index: number): CSSProperties {
-  const c=NOTE_COLORS[index % NOTE_COLORS.length];
+  const c=NOTE_COLORS[Number.isInteger(index) && index>=0 ? index % NOTE_COLORS.length : 0];
   return {'--note-ink':c.ink,'--note-fill':c.fill,'--note-paper':c.paper} as CSSProperties;
 }

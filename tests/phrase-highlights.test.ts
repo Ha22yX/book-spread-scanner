@@ -5,7 +5,7 @@ import { evidenceAnchors } from '../lib/evidence';
 import { resolveAnnotations } from '../lib/anchors';
 import { queueSpread } from '../lib/pipeline';
 import { attachPageNumbers, pageLabel, pageNumbersSchema } from '../lib/page-numbers';
-import { NOTE_COLORS } from '../lib/note-colors';
+import { NOTE_COLORS, noteStyle } from '../lib/note-colors';
 import type { Spread, TextSpan } from '../lib/types';
 const line=(text:string,id='L1',side:'left'|'right'='left'):TextSpan=>({id,side,text,confidence:99,polygon:[{x:10,y:10},{x:410,y:30},{x:410,y:50},{x:10,y:30}],words:[{text,start:0,end:text.length,box:{x0:10,y0:10,x1:410,y1:50}}]});
 function locate(spans:TextSpan[],quote:string,sentence_id='S1'){
@@ -64,4 +64,8 @@ void test('printed folios support Roman numerals and explicit unknowns; never gu
   assert.equal(pageLabel({sequence:99,pageNumbers:{left:null,right:null}}),'P? - P?');
   assert.throws(()=>pageNumbersSchema.parse({left:'Chapter 1',right:'23'}));
   assert.equal(new Set(NOTE_COLORS.map(c=>c.fill)).size,4);
+});
+void test('color lookup cannot crash when an old leader is absent from the next photo',()=>{
+  for(const value of [-1,NaN,Infinity,undefined as unknown as number])assert.deepEqual(noteStyle(value),noteStyle(0));
+  assert.equal(new Set([0,1,2,3].map(i=>JSON.stringify(noteStyle(i)))).size,4);
 });

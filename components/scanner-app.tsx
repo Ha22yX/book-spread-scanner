@@ -807,6 +807,7 @@ export function ScannerApp({
                         </div>
                       ) : (
                         <MarginalBook
+                          key={`${spread.id}-${spread.revision}`}
                           session={sessionId}
                           spread={spread}
                           activeNote={activeNote}
