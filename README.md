@@ -1,110 +1,122 @@
-# 书页 · 双页扫描与批注
+<h1 align="center">Book Spread Scanner</h1>
 
-手机竖屏拍摄展开的书本，确认系统相机照片后自动上传。Codex Sites 云端保存照片、任务队列和进度；电脑后台处理器自动领取任务、调用云端分页、执行 PaddleOCR、联读前两张原文并生成英文批注。网页无需一直打开，处理器所在电脑需要保持开机。
+<p align="center">Turn an open book into an annotated reading view.<br/>Capture with your phone. Extract text on your computer. Read short English notes beside the original page.</p>
 
-## 使用
+<p align="center">
+  <strong>English</strong> · <a href="README.zh-CN.md">简体中文</a> ·
+  <a href="#why-this-exists">Why This Exists</a> ·
+  <a href="#features">Features</a> · <a href="#quickstart">Quickstart</a>
+</p>
 
-1. 在电脑端打开首页，点击“手机拍摄”显示二维码。
-2. 手机扫码打开拍摄页。私有 Sites 链接需要手机和电脑登录同一账号。
-3. 手机网页只有拍照入口和上传状态。点击“拍照”，拍完在系统相机确认，自动压缩并上传；竖屏图片保留完整画面，不强制裁横图。
-4. 上传成功后可以继续拍下一张或关闭手机网页。电脑网页显示：排队 → 分割 → 左页 OCR → 右页 OCR → 前文 → 英文批注。百分比是实际阶段权重，不是耗时预测；AI 请求期间保持 85%，真正完成才显示 100%。
-5. 最终结果自动出现；分割有误才需要在电脑“原图与分割”中微调（保存后自动重新处理），失败时显示重试按钮。
+<p align="center">
+  <img alt="TypeScript and React" src="https://img.shields.io/badge/TypeScript-React-3178C6?style=for-the-badge&amp;logo=typescript&amp;logoColor=white" />
+  <img alt="OCR: PaddleOCR and ONNX" src="https://img.shields.io/badge/OCR-PaddleOCR%20%2B%20ONNX-287866?style=for-the-badge" />
+  <img alt="Storage: Cloudflare D1 and R2" src="https://img.shields.io/badge/Cloudflare-D1%20%2B%20R2-EA7B24?style=for-the-badge&amp;logo=cloudflare&amp;logoColor=white" />
+</p>
 
-摄像头预览需要 HTTPS（本机 localhost 除外）。手机访问普通 HTTP 局域网地址时，应使用照片选择器或部署后的 HTTPS 地址。程序仅在点击拍摄后上传照片，不上传视频。
+<p align="center">
+  <img src=".github/assets/readme-hero.svg" alt="Technical workflow: phone capture, cloud queue, page splitting, desktop PaddleOCR, OpenAI annotations, and a browser reader" width="100%" />
+</p>
 
-## 本地开发
+The web app saves photos and queues work; a **separate desktop processor** handles OCR and requests AI annotations. The processor's computer must remain awake and connected. The interface is primarily in Simplified Chinese, while generated reading notes are in English.
 
-推荐在本机磁盘上开发。当前 NAS 映射盘在 Node 初始化与 Git 锁文件写入时出现 ENOENT；实际开发副本位于 `C:/Users/kicof/Projects/book-spread-scanner-20260907`，源码及 Git 历史同步到原项目目录。
+## Why This Exists
 
-需要 Node.js 22.13+。
+A photo preserves a book page, but reading from a pile of photos is awkward. A passage may cross the gutter, the next sentence may continue onto another capture, and a note detached from its source is hard to trust.
+
+Book Spread Scanner brings those pieces together. Photograph both pages at once, keep captures in reading order, and review short notes on the original image. OCR supplies the text and its location; the model supplies a concise observation tied to a quoted phrase. The previous two spreads provide context without turning every request into an upload of the entire book.
+
+The workflow also separates capture from processing. After a photo uploads, you can take another or close the phone page. The durable queue and desktop processor continue the work, and the reader shows results when they are ready.
+
+## Features
+
+| Capability | What it does |
+| --- | --- |
+| Phone-to-desktop capture | Pair with a session QR code; use the system camera or a photo picker, then upload the confirmed image |
+| Two-page splitting | Detect the book's gutter, separate left and right pages, and manually adjust an incorrect split |
+| Desktop OCR | Run Guten OCR / PaddleOCR PP-OCRv4 through native ONNX Runtime, left page before right page |
+| Context-aware reading notes | Use the current photo and text plus the previous two spreads' text from the same session |
+| Short English annotations | Aim for 2–4 distinct notes per spread, each at most 10 words, anchored to source phrases |
+| Visual evidence | Match colored phrase highlights to margin notes and connecting lines; retain the original uploaded image |
+| Printed page numbers | Read visible folios from the image; show unknown values instead of guessing from capture order |
+| Durable processing | Persist the queue and progress, recover expired task leases, and display processor-offline status |
+| Targeted corrections | Re-split and reprocess a photo, retry a failed task, or regenerate only annotations while keeping existing OCR |
+| Long-session navigation | Use a filmstrip, keyboard navigation, lightweight progress polling, and lazy thumbnails |
+
+### Technical flow
+
+1. **Capture:** the browser normalizes orientation and resizes the upload to at most 2,400 pixels on its long edge and 3.8 megapixels. The saved original is this upload image, not the untouched camera file.
+2. **Save and split:** Cloudflare D1 stores session order, revisions, text, and task state; R2 stores images. A Worker detects the gutter, with optional OpenAI vision assistance when local confidence is low.
+3. **Recognize:** the desktop processor claims queued work and runs OCR. Detected line quadrilaterals remain the source of text coordinates.
+4. **Annotate:** OpenAI receives the current photo, current text, and the previous two spreads' text. Returned evidence is validated against current-page text; highlight coordinates come from OCR.
+5. **Review:** the browser displays the annotated image, printed page numbers, and processing state. Version checks prevent old results from overwriting a revised split.
+
+Phrase boundaries are estimated within OCR line geometry; they are not pixel-perfect character detection. Glare, blur, steep angles, and complex columns can reduce quality. Full perspective correction, curved-page flattening, and automatic page turning are not implemented. Unreadable pages can produce no notes; invalid results are surfaced for retry.
+
+## Quickstart
+
+### 1. Install and configure
+
+Use **Node.js 22.13 or newer**, npm, and Git. The commands below use PowerShell.
 
 ```powershell
+git clone https://github.com/Ha22yX/book-spread-scanner.git
+cd book-spread-scanner
 npm ci
 Copy-Item .env.example .dev.vars
-# 填入 OPENAI_API_KEY、OPENAI_MODEL=gpt-5.6-sol、随机 PROCESSOR_TOKEN
+```
+
+Edit `.dev.vars` locally before continuing:
+
+| Variable | Configuration |
+| --- | --- |
+| `OPENAI_API_KEY` | Your OpenAI API key; AI annotation and optional vision requests incur API usage charges |
+| `OPENAI_MODEL` | The example and code default to `gpt-5.6-sol`; use a model available to your account that supports the image and structured-output requests in this project |
+| `PROCESSOR_TOKEN` | A long random secret shared by the web service and desktop processor |
+| `PROCESSOR_BASE_URL` | `http://127.0.0.1:3000` for local use; the HTTPS site URL for a remote deployment |
+| `SITE_ACCESS_TOKEN` | Needed by the processor when connecting to an access-restricted `*.chatgpt.site` deployment; leave empty for localhost |
+
+Generate a processor token locally with `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"` and paste it into `.dev.vars`. Real credentials belong in ignored local files or your hosting provider's secret store. `.env.example` contains empty credential fields.
+
+### 2. Start the web app and processor
+
+In the first terminal:
+
+```powershell
 npm run db:migrate
 npm run dev
 ```
 
-本地预览默认 `http://localhost:3000`。`.dev.vars`、`.env*`、本地数据库、测试照片和构建产物不进入 Git。生产环境密钥通过 Sites Secret 配置。修改密钥或模型后重启开发服务。
-
-### 云端网页 + 电脑后台（当前使用方式）
-
-在云端配置 `PROCESSOR_TOKEN` 秘密，与电脑 `.dev.vars` 中相同。电脑同时配置 `PROCESSOR_BASE_URL` 为现有 Sites HTTPS 地址、`SITE_ACCESS_TOKEN` 为本站授权访问凭证。访问凭证仅保存在电脑的忽略文件中，不能放进前端或 Git。运行 `npm run processor` 启动后台守护程序；会重启异常退出的 OCR 进程。无需开放电脑入站端口、无需手机与电脑处于同一 Wi-Fi。
-
-照片与队列存放云端。后台断线时新照片继续排队；处理中任务的 5 分钟租约过期后可重新领取，旧处理器不能覆盖新租约的结果。连续照片按会话顺序处理；异常恢复最多尝试 3 次，之后明确报错并允许人工重试。云端不能单独运行本机 ONNX 原生库，因此电脑关机时不会继续 OCR。
-
-### Windows 后台自动恢复
-
-在项目中运行 `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-background.ps1`，安装当前用户的 `BookSpreadScanner-Background` 计划任务。登录后自动启动，每分钟检查一次；任务运行中不会重复启动，不需要保存 Windows 密码。可在“任务计划程序”中禁用或删除这一项以撤销自启。安装器重新运行只更新同名任务，不创建多个副本。
-
-后台有操作系统命名管道单实例锁；子进程退出后 5 秒重启；2 分钟无响应或单张任务超过 12 分钟时重启，再通过云端租约安全接续。守护程序退出时，受管处理器也会退出，避免遗留重复计算进程。日志在忽略 Git 的 `outputs/processor-YYYY-MM-DD.log`，记录时间、阶段和退出状态，不写凭证。
-
-处理器每 30 秒向本站认证接口报告存活，云端 R2 保存独立的 `_system/processor-presence.json` 小对象；超过 90 秒未报告，网页显示“后台离线，照片已保存”。检查失败显示状态未知，不影响读取照片。排队照片显示“排队中”，不再把 5% 称为正在 OCR。恢复连接后继续自动领取；无需重新上传。
-
-这不是云端 OCR：电脑必须开机、用户已登录、联网且不能休眠。没有修改系统电源策略，也不能在关机时运行。重启后的登录自启和一分钟守护仅在安装此任务的 Windows 用户下有效；移动项目或 Node 安装后应重新运行安装器。
-
-如果计划任务被禁用，Windows 不会执行它的自启或重试规则，需要在任务计划程序中重新启用；系统不绕过用户的禁用决定。网页全局提示后台离线或网络断开，避免把旧进度误当实时状态。新发布版本会提示刷新，但不会自动刷新打断拍照或上传；尚未加载此功能的旧页面需要手动刷新一次。
-
-后台只查询前两张照片，不下载整本书的 OCR。分割、前文下载和原图下载并行，左右页图片并行下载，OCR 仍按左→右顺序运行。日志输出各阶段毫秒耗时，便于区分排队、网络、OCR 和 AI 延迟。有效批注不足两处时，仅重新请求一次更短、单句定位的结果，仍不通过则明确失败，不无限重试。
-
-已有 OCR 时，“只重新生成批注”使用 `mode: annotations`，跳过分割、左右页下载和 OCR，只读取现有文字、前两张原文和当前原图。旧批注保留到新结果验证成功再替换。`scripts/regenerate-annotations.ts SESSION_UUID` 会备份旧数据、按实际拍摄顺序逐张重新生成，并核对 OCR/分割数据哈希不变；可用同一命令断点续跑。备份与检查点在忽略 Git 的 `outputs/`，不会放到公开网站或代码仓库。
-
-仅本地开发时可以运行 `npm run build` 后运行 `npm run lan`，并将 `PROCESSOR_BASE_URL` 设为 `http://127.0.0.1:3000`。使用根目录 `wrangler.lan.json` 加载本地秘密，避免把秘密复制进构建产物。
-
-首次创建数据库使用 `npm run db:migrate`。该脚本用 Wrangler 官方迁移记录，重复执行不会重建已存在的数据表。修改 `db/schema.ts` 后运行 `npm run db:generate`，再迁移。已发布迁移不修改，新增迁移追加。
-
-## 架构
-
-- React + TypeScript + Vinext；手机 `/scan/:session`，电脑 `/review/:session`。
-- Cloudflare Worker 路由负责会话、上传、JPEG 解码、书脊检测、裁分和 OpenAI 请求。
-- D1 保存会话、拍摄顺序、分割版本、OCR 和批注；R2 保存定向后的原始上传图及每版左右页 JPEG。
-- 浏览器 Canvas 统一 EXIF 方向并限制上传长边 2400 像素、总像素 380 万。保留的“原图”是上传用图，不是相机未经压缩的原文件。
-- OCR 使用开源 [Guten OCR](https://github.com/gutenye/ocr) + [PaddleOCR PP-OCRv4](https://github.com/PaddlePaddle/PaddleOCR)，在电脑后台 Node 进程通过 ONNX Runtime 运行整行检测与识别，不需要额外 OCR 付费账号。手机和电脑网页不再执行 OCR；原浏览器 OCR 和 Tesseract 仅保留作对照。
-- 服务端以 `gpt-5.6-sol` 调用 Responses API，使用结构化输出和 `store:false`。发送当前原图、当前完整句子及同会话前两张照片的原文（各自先左后右）；模型只返回句子 ID 和简单英文批注，坐标完全来自 OCR。前端、日志与 Git 不包含 API Key。
-- 整张双页照片生成 2–4 处不同的批注，每条最多 10 个英文词，优先 4–8 词的简单短句。聚焦重要手法、人物变化或剧情，不为数量重复观点或编造证据；不可读照片可以返回空批注并保留原图。四种高亮颜色与对应页边笔记、引导线一致。AI 返回当前句子内的原样短语，由逐字符来源映射回 OCR 行；只裁出引用部分。旧 OCR 只有整行四边形时，按相对字符宽度估算词句边界，保留倾斜角度，悬停标明估算；不是重新 OCR，也不声称逐字像素级精度。
-- AI 同时读取原图上的左右印刷页码，返回 `page_numbers`；没有看清时为 null，不从拍摄顺序或邻页猜测。每条批注及各高亮有对应页码数据，导航显示 `P22 - P23`，未知为 `P?`。拍摄序号仍保留作为稳定的原始顺序。
-- 手机与电脑通过同一随机会话链接配对，电脑网页每 1.5 秒读取持久化进度。会话链接作为访问能力，应只发送给自己的设备；站点默认仅所有者可访问。
-
-## 定位与顺序
-
-每次拍摄一条 spread，分配递增 sequence。每条记录固定包含 left 和 right，阅读序号为 `2*sequence-1` 和 `2*sequence`，与书上印刷页码无关。两侧 OCR 独立，合并 AI 输入时固定先左后右。
-
-OCR 先检测整行倾斜四边形，再识别每行文本；根据标点、缩进和断词拼接完整句子，保留源行映射。在“识别文字”中展示句子，几何定位仍保留每个原始文字行，不能把整段直接当作一个大矩形。补丁禁用了上游按宽大轴对齐框误合并倾斜邻行的逻辑。
-
-当前是行级四边形定位，不是字符级定位：句子从行中开始或结束时，该边界行会整行高亮。跨行、跨页的句子对应多个四边形。服务端拒绝不存在、歧义或没有坐标的引用，并限制候选句子及批注覆盖行数，避免一次误标整页。原始坐标随图片缩放保持一致。
-
-前两张照片只取同一会话、当前序号之前的记录，不允许把历史句子作为当前高亮锚点；切换书本应创建新会话。历史 OCR 不存在或引擎过旧时会在电脑后台补识别，增加等待时间。保存批注前再次校验前文版本，不引用后续未上传的故事情节。
-
-重新分割产生新 revision，清除旧 OCR/批注。旧版本写入返回 409，避免坐标错配。上传支持请求 ID 幂等重试；任务有超时锁，避免重复同时生成批注。
-
-## 书脊检测边界
-
-先根据中央区域连续的亮暗对比估计书脊。局部算法置信度不足且服务端已配置 API Key 时，将一张缩小的照片交给 GPT-5.6 Sol 识别书脊可见上下端点，再换算到完整照片的分割坐标。该辅助请求会产生 OpenAI 调用费用；只用于页面几何，批注文字位置仍完全来自 OCR。视觉辅助失败或结果不可靠时，明确返回低置信度中线，要求人工核对。两种方法均不保证所有背景下正确，模型返回的置信度是启发式分数而非经过校准的准确率。
-
-左右分割保留各侧完整边缘，按行重采样拉直斜分割线。暂不实现自动外边缘裁切、完整透视矫正、弯曲书页展平、自动翻页拍摄或竖排古籍识别。严重倾斜、遮挡、反光和复杂双栏会降低分割/OCR质量。OCR 首次加载和推理可能花费几十秒，AI 请求超时为 115 秒。
-
-## 验证
-
-自动流程实测：`npx tsx scripts/integration-auto.ts "书页照片路径"`（会真实调用 AI）。该测试只上传三张照片，之后仅轮询状态，不发送任何处理触发请求；包含一张保留书页的竖屏长图，验证队列顺序、前两张原文、上传幂等、后台认证及阶段进度。下面旧 `integration.ts` 仅适用于未配置自动处理器的手动模式。
+In a second terminal, from the same project directory:
 
 ```powershell
-npm run typecheck
-npm test
-npm run build
-# 在 npm run dev 运行时执行端到端接口测试
-./scripts/generate-fixture.ps1
-npx tsx scripts/integration.ts --ocr
-# 下面一项会真实调用配置的 OpenAI 模型并产生费用
-npx tsx scripts/integration.ts --ocr --ai
+npm run processor
 ```
 
-测试包含偏心/倾斜书脊、无书脊回退、左右顺序、跨页引用、错误坐标拒绝、上传重试、会话隔离、手动重分割、旧版本冲突、句子拼接、缺失空格、低分噪声过滤、倾斜行坐标以及多模态请求和历史范围。已用用户提供的《Convenience Store Woman》双页照片运行真实浏览器 PP-OCR + OpenAI：48 条文字行，重点句子对应左页 4 个倾斜高亮区域，背景和右页不再误标。测试会话中的前一张是同图重复测试，未替代连续不同书页的内容评估。未代替真实 iOS/Android 摄像头权限及手持拍摄验收。
+Open **[localhost:3000](http://localhost:3000/)**. Both processes are needed for the automatic local workflow. The processor supervisor restarts a failed OCR child; it cannot process anything while the computer is shut down or asleep.
 
-依赖已更新并检查；生产依赖 `npm audit --omit=dev` 当前为 0 个已知漏洞。开发工具链仍有审计项，不代表整个依赖树零漏洞。`patch-package` 在安装后应用可追踪补丁。
+### 3. Capture and read
 
-站点提供可选 WebMCP 选中已扫描书页工具。无支持的浏览器上下文时自动忽略；已验证有效记录可以切换、无效记录返回错误，生成任务进行时禁止切换。
+1. Open a session on the computer and select **手机拍摄** to show its QR code.
+2. Open the capture page on your phone, take a photo, and confirm it in the system camera. You can also choose an existing image.
+3. Follow the stages on the computer: queued → split → left OCR → right OCR → context → annotations.
+4. Read the highlights and margin notes; adjust the split or retry only if needed.
 
-## 发布与版本控制
+A phone cannot reach your computer through a `localhost` URL. For local-network use, set `PROCESSOR_BASE_URL` to `http://127.0.0.1:3000`, stop the two development processes, then run:
 
-`npm run build` 输出 Cloudflare Worker 与静态资源，Sites 按 `.openai/hosting.json` 绑定数据库和对象存储。Git 的 `main` 保存开发里程碑，Sites 远端保存对应源码。禁止将 `.dev.vars` 加入 Git。
+```powershell
+npm run build
+npm run lan
+```
+
+This starts both the web service and OCR processor. Open `http://YOUR_COMPUTER_LAN_IP:3000/` on your computer to create a phone-reachable QR link, and connect the phone to the same network. Live camera preview requires HTTPS except on localhost; use the photo picker on ordinary LAN HTTP. For remote capture, use an authenticated HTTPS deployment.
+
+### Hosting, privacy, and development
+
+- **Hosting:** the current architecture uses a Cloudflare Worker, D1, and R2, with Sites integration. `.openai/hosting.json` identifies the existing deployment; configure your own project and bindings for a separate deployment. Publishing this source does not make the running site public.
+- **Data:** a remote deployment stores uploaded photos, OCR, and annotations in its configured cloud storage. OpenAI receives the image and text described above. OCR runs on the processor computer; this is not a fully offline workflow.
+- **Access:** session links act as access capabilities. Keep them private and protect a remote site with authentication. `PROCESSOR_TOKEN` protects the processor endpoint, not every reader or upload route.
+- **Checks:** run `npm run typecheck`, `npm test`, and `npm run build`. Integration scripts using AI make real API calls; see the [development and operations notes](docs/operations.zh-CN.md).
+- **Windows background service:** optional sign-in startup, recovery behavior, and annotation-only regeneration are documented in those same notes.
+- **Credential review:** see the [publication security notes](docs/security.md) for scan scope and credential handling.
+- **Third-party assets:** OCR models and runtimes retain their notices in [public/ocr/NOTICE.txt](public/ocr/NOTICE.txt). No repository-wide license file has been added.

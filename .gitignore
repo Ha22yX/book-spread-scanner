@@ -19,6 +19,16 @@
 # misc
 .DS_Store
 *.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+credentials.json
+service-account*.json
+*.sqlite
+*.sqlite3
+*.db
 
 # debug
 npm-debug.log*

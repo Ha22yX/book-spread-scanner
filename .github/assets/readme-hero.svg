@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="520" viewBox="0 0 1120 520" role="img" aria-labelledby="title desc">
+  <title id="title">Book Spread Scanner technical workflow</title>
+  <desc id="desc">A phone uploads a book photo to a cloud queue backed by D1 and R2. A Worker splits the pages. A desktop processor runs PaddleOCR, then requests short OpenAI annotations using the current photo and text plus the previous two spreads. The browser displays highlights and margin notes. The desktop must remain running.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f5faf6"/><stop offset=".5" stop-color="#fcfaf3"/><stop offset="1" stop-color="#edf7f1"/></linearGradient>
+    <filter id="shadow" x="-10%" y="-15%" width="120%" height="140%"><feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#18362d" flood-opacity=".11"/></filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M1 1 9 5 1 9" fill="none" stroke="#528774" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></marker>
+  </defs>
+  <rect width="1120" height="520" rx="30" fill="url(#bg)"/>
+  <path d="M0 405Q220 333 470 398T1120 365V520H0Z" fill="#dceee5" opacity=".65"/>
+  <rect x="38" y="38" width="1044" height="416" rx="26" fill="#fff" filter="url(#shadow)"/>
+  <g font-family="Segoe UI, Arial, sans-serif">
+    <rect x="58" y="58" width="250" height="376" rx="20" fill="#143b2e"/>
+    <rect x="84" y="84" width="58" height="58" rx="15" fill="#e6f4ec"/>
+    <path d="M96 99Q108 96 113 102Q121 97 131 100V125Q120 122 113 128Q104 122 96 125ZM113 102V128" fill="none" stroke="#2c8a67" stroke-width="2.5" stroke-linejoin="round"/>
+    <text x="84" y="183" fill="#bad7c7" font-size="11" font-weight="700" letter-spacing="1.6">PAPER TO READING NOTES</text>
+    <text x="84" y="222" fill="#fff" font-size="29" font-weight="750">Book Spread</text>
+    <text x="84" y="258" fill="#fff" font-size="29" font-weight="750">Scanner</text>
+    <text x="84" y="299" fill="#d7e9df" font-size="14">Capture two pages.</text>
+    <text x="84" y="322" fill="#d7e9df" font-size="14">Keep the evidence in view.</text>
+    <rect x="84" y="361" width="196" height="43" rx="11" fill="#2b795c"/>
+    <text x="182" y="388" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">Phone + cloud + desktop</text>
+
+    <text x="344" y="83" fill="#4e655a" font-size="12" font-weight="700" letter-spacing="1.4">FROM CAMERA TO ANNOTATED PAGE</text>
+    <g stroke="#528774" stroke-width="2.5" fill="none" marker-end="url(#arrow)">
+      <path d="M553 172H580"/><path d="M793 172H820"/>
+      <path d="M935 236V286"/>
+      <path d="M830 356H804"/><path d="M590 356H564"/>
+    </g>
+
+    <g transform="translate(344 108)">
+      <rect width="210" height="128" rx="15" fill="#fff9f3" stroke="#ecddcd"/>
+      <text x="18" y="28" fill="#906c45" font-size="11" font-weight="700">01 / PHONE</text>
+      <text x="18" y="59" fill="#1b3027" font-size="20" font-weight="700">Capture &amp; upload</text>
+      <text x="18" y="84" fill="#58685f" font-size="13">QR pairing · camera / file</text>
+      <text x="18" y="105" fill="#58685f" font-size="13">Orient + resize in browser</text>
+    </g>
+    <g transform="translate(584 108)">
+      <rect width="210" height="128" rx="15" fill="#f6faf7" stroke="#d2e5d9"/>
+      <text x="18" y="28" fill="#427a5d" font-size="11" font-weight="700">02 / CLOUD STORAGE</text>
+      <text x="18" y="59" fill="#1b3027" font-size="20" font-weight="700">Save &amp; queue</text>
+      <text x="18" y="84" fill="#58685f" font-size="13">D1: order, progress, text</text>
+      <text x="18" y="105" fill="#58685f" font-size="13">R2: photos + page images</text>
+    </g>
+    <g transform="translate(824 108)">
+      <rect width="210" height="128" rx="15" fill="#f6faf7" stroke="#d2e5d9"/>
+      <text x="18" y="28" fill="#427a5d" font-size="11" font-weight="700">03 / CLOUD WORKER</text>
+      <text x="18" y="59" fill="#1b3027" font-size="20" font-weight="700">Split the spread</text>
+      <text x="18" y="84" fill="#58685f" font-size="13">Detect the book's gutter</text>
+      <text x="18" y="105" fill="#58685f" font-size="13">Optional vision fallback</text>
+    </g>
+    <g transform="translate(824 292)">
+      <rect width="210" height="128" rx="15" fill="#f5f5fc" stroke="#dbd9ee"/>
+      <text x="18" y="28" fill="#726397" font-size="11" font-weight="700">04 / DESKTOP PROCESSOR</text>
+      <text x="18" y="59" fill="#1b3027" font-size="20" font-weight="700">PaddleOCR</text>
+      <text x="18" y="84" fill="#58685f" font-size="13">ONNX · left, then right</text>
+      <text x="18" y="105" fill="#58685f" font-size="13">Text lines + coordinates</text>
+    </g>
+    <g transform="translate(584 292)">
+      <rect width="210" height="128" rx="15" fill="#fff9f3" stroke="#ecddcd"/>
+      <text x="18" y="28" fill="#906c45" font-size="11" font-weight="700">05 / OPENAI API</text>
+      <text x="18" y="59" fill="#1b3027" font-size="20" font-weight="700">Short English notes</text>
+      <text x="18" y="84" fill="#58685f" font-size="13">Current photo + text</text>
+      <text x="18" y="105" fill="#58685f" font-size="13">Previous two spreads' text</text>
+    </g>
+    <g transform="translate(344 292)">
+      <rect width="210" height="128" rx="15" fill="#f6faf7" stroke="#d2e5d9"/>
+      <text x="18" y="28" fill="#427a5d" font-size="11" font-weight="700">06 / BROWSER READER</text>
+      <text x="18" y="59" fill="#1b3027" font-size="20" font-weight="700">Read in context</text>
+      <text x="18" y="84" fill="#58685f" font-size="13">Colored phrase highlights</text>
+      <text x="18" y="105" fill="#58685f" font-size="13">Margin notes + page folios</text>
+    </g>
+    <text x="560" y="487" text-anchor="middle" fill="#365e4c" font-size="13">The desktop stays on for OCR. API credentials stay off the browser and out of Git.</text>
+  </g>
+</svg>
